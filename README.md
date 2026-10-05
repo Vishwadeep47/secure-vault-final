@@ -660,4 +660,45 @@ Listing limitations clearly shows maturity and usually earns credit.
 
 ---
 
-_Last updated: October 2026. Keep the Project Status table current as the team progresses._
+_Last updated: October 2026. Keep the Project Status table current as the team progresses._## Project status (replace the old status table in README.md with this)
+
+| Area | Status |
+|---|---|
+| Password hashing (Argon2), lockout | Done |
+| TOTP multi-factor authentication | Done |
+| JWT sessions with revocation | Done |
+| Encrypted notes | Done |
+| Encrypted image vault | Done |
+| Encrypted card vault (test cards only) | Done |
+| Admin logs, users, statistics | Done |
+| Password reset and change | Done (token printed to console, no email) |
+| Frontend | Done |
+| Security tests | 119 passed, 1 skipped |
+| Hardening | Done, see `docs/hardening.md` |
+| Face authentication | **Not built**: design and setup script only |
+
+## Run it
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+python serve.py          # then open http://127.0.0.1:5000
+python -m pytest -q      # run all tests
+python scripts/hardening_check.py
+```
+
+## Documents
+
+- `docs/report.md` project report
+- `docs/threat_model.md` threats, defences and tests
+- `docs/architecture.md` diagrams
+- `docs/demo_script.md` demo steps
+- `docs/hardening.md` hardening table
+- `docs/test_results.txt` full test output
+
+## Team
+
+| Name | Roll no. | Role |
+|---|---|---|
+| (fill in) | | |
