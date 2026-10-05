@@ -697,8 +697,3 @@ python scripts/hardening_check.py
 - `docs/hardening.md` hardening table
 - `docs/test_results.txt` full test output
 
-## Team
-
-| Name | Roll no. | Role |
-|---|---|---|
-| (fill in) | | |
