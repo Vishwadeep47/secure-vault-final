@@ -1,0 +1,8 @@
+.secrets/
+*.db
+venv/
+__pycache__/
+.env
+uploads/models/
+
+uploads/
