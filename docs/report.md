@@ -2,7 +2,7 @@
 
 **Course project:** Cybersecurity minor project
 **Repository:** https://github.com/Vishwadeep47/secure-vault-final
-**Team:** (fill in names, roll numbers and roles before submission)
+
 
 ## 1. Abstract
 
@@ -75,4 +75,9 @@ SecureVault delivers a working encrypted vault with layered authentication, an a
 
 ## 10. Team contributions
 
-(Fill in: member name, roll number, tasks done.)
+| Name | Enrollment Number | Section | Roll No | 
+|---|---|---|---|
+| Vishwadeep Choudhary | AJU/221210 | D | 107 | 
+| Aman Kumar Mishra | AJU/232166 | D | 141 | 
+| Raja Babu | AJU/232212 | D | 151 | 
+| Rajesh Kumar Mahato | AJU/232213 | D | 152 | 
