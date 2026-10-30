@@ -62,7 +62,7 @@ def note(text):
     print(f"      {text}")
 
 
-# ------------------------------------------------------------------- step 1
+# step 1
 def check_install():
     print(f"Python {platform.python_version()} on {platform.system()} {platform.machine()}")
     try:
@@ -83,7 +83,7 @@ def check_install():
     return cv2 if has_api else None
 
 
-# ------------------------------------------------------------------- step 2
+# step 2
 def download(url, dest, min_bytes):
     request = urllib.request.Request(url, headers={"User-Agent": "securevault-setup-check"})
     fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(dest), suffix=".part")
@@ -131,7 +131,7 @@ def ensure_model(key):
     return None
 
 
-# ------------------------------------------------------------------- step 3
+# step 3
 def load_models(cv2, detector_path, recognizer_path):
     detector = recognizer = None
     try:
@@ -192,7 +192,7 @@ def verdict(cv2, recognizer, f1, f2, what):
     return score
 
 
-# --------------------------------------------------------------- optional tests
+# optional tests
 def test_images(cv2, detector, recognizer, path1, path2):
     features = []
     for label, path in (("photo 1", path1), ("photo 2", path2)):
@@ -275,7 +275,7 @@ def test_webcam(cv2, detector, recognizer, camera_index):
         verdict(cv2, recognizer, features[0], features[1], "webcam photo 1 vs 2 (same you)")
 
 
-# ------------------------------------------------------------------------ main
+# main
 def main():
     parser = argparse.ArgumentParser(description="Check face authentication setup")
     parser.add_argument("--webcam", action="store_true", help="test the camera and face matching")

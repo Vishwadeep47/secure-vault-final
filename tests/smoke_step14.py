@@ -40,7 +40,7 @@ def read(*parts):
         return f.read()
 
 
-# --- the page and its files ---------------------------------------------------
+# the page and its files
 page = client.get("/")
 html = page.get_data(as_text=True)
 check("home page is served", page.status_code == 200 and 'id="app"' in html and "SecureVault" in html)
@@ -56,7 +56,7 @@ check("scripts are served as JavaScript", "javascript" in client.get(scripts[0])
 check("path traversal out of /static is blocked",
       all(client.get(p).status_code == 404 for p in ("/static/../app/config.py", "/static/%2e%2e/app/config.py")))
 
-# --- security headers ---------------------------------------------------------
+# security headers
 for path in ("/", "/api/health"):
     h = client.get(path).headers
     check(f"{path}: strict content security policy",
@@ -66,7 +66,7 @@ for path in ("/", "/api/health"):
           and h.get("Referrer-Policy") == "no-referrer")
 check("API responses are never cached", client.get("/api/health").headers.get("Cache-Control") == "no-store")
 
-# --- the frontend code itself stays safe ----------------------------------------
+# the frontend code itself stays safe
 js_dir = os.path.join(ROOT, "static", "js")
 js_files = sorted(f for f in os.listdir(js_dir) if f.endswith(".js"))
 sources = {f: read("static", "js", f) for f in js_files}
@@ -79,7 +79,7 @@ check("page has no inline scripts, styles, or event handlers",
       and "<style" not in html and not re.search(r'\s(style|on[a-z]+)=', html))
 check("stylesheet uses no outside resources", "http" not in read("static", "css", "app.css"))
 
-# --- logout really ends sessions ---------------------------------------------------
+# logout really ends sessions
 client.post("/api/register", json={"username": "alice", "password": PW})
 token = client.post("/api/login", json={"username": "alice", "password": PW}).json["token"]
 second = client.post("/api/login", json={"username": "alice", "password": PW}).json["token"]
@@ -96,7 +96,7 @@ check("logging in again works",
 events = {r[0] for r in sqlite3.connect(app.config["DB_PATH"]).execute("SELECT event FROM audit_log")}
 check("logout is audit logged", "logout" in events)
 
-# --- MFA setup returns a QR code ------------------------------------------------------
+# MFA setup returns a QR code
 fresh = {"Authorization": "Bearer " + client.post(
     "/api/login", json={"username": "alice", "password": PW}).json["token"]}
 setup = client.post("/api/mfa/setup", headers=fresh).json

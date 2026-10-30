@@ -68,7 +68,7 @@ bob = make_user("bob")
 png = make_image("PNG")
 jpg = make_image("JPEG")
 
-# --- upload / list / download ----------------------------------------------
+# upload / list / download
 check("images require login", client.get(URL).status_code == 401)
 r = upload(alice, png)
 check("upload PNG", r.status_code == 201 and r.json["mime"] == "image/png")
@@ -83,7 +83,7 @@ check("download returns identical image bytes", dl.status_code == 200 and dl.dat
 check("download is not cached", dl.headers.get("Cache-Control") == "no-store")
 check("nosniff header set", dl.headers.get("X-Content-Type-Options") == "nosniff")
 
-# --- what is really on disk -------------------------------------------------
+# what is really on disk
 name = sqlite3.connect(DB).execute("SELECT stored_name FROM images WHERE id=?", (img_id,)).fetchone()[0]
 with open(os.path.join(UPLOADS, name), "rb") as f:
     on_disk = f.read()
@@ -96,7 +96,7 @@ name2 = sqlite3.connect(DB).execute("SELECT stored_name FROM images WHERE id=?",
 with open(os.path.join(UPLOADS, name2), "rb") as f:
     check("same image uploaded twice gives different ciphertext", f.read() != on_disk)
 
-# --- validation -------------------------------------------------------------
+# validation
 check("text file renamed .png is rejected", upload(alice, b"just some text, not an image", "evil.png").status_code == 400)
 check("HTML file renamed .jpg is rejected", upload(alice, b"<html><script>alert(1)</script></html>", "x.jpg").status_code == 400)
 check("empty file rejected", upload(alice, b"", "empty.png").status_code == 400)
@@ -116,13 +116,13 @@ too_big = upload(alice, b"0" * 300_000, "huge.png")
 check("file over size limit gets 413", too_big.status_code == 413 and "error" in too_big.json)
 check("rejected uploads left no files behind", len(stored_files()) == 3)
 
-# --- ownership --------------------------------------------------------------
+# ownership
 check("other user cannot download my image", client.get(f"{URL}/{img_id}", headers=bob).status_code == 404)
 check("other user cannot delete my image", client.delete(f"{URL}/{img_id}", headers=bob).status_code == 404)
 check("other user's list is empty", client.get(URL, headers=bob).json["images"] == [])
 check("my image survived", client.get(f"{URL}/{img_id}", headers=alice).data == png)
 
-# --- tampering and swapping -------------------------------------------------
+# tampering and swapping
 path = os.path.join(UPLOADS, name)
 tampered = bytearray(on_disk)
 tampered[20] ^= 1
@@ -141,7 +141,7 @@ check("file swapped between two images is rejected", client.get(f"{URL}/{ids[2]}
 events = {row[0] for row in sqlite3.connect(DB).execute("SELECT event FROM audit_log")}
 check("audit log records image events", {"image_uploaded", "image_integrity_failure"} <= events)
 
-# --- delete -----------------------------------------------------------------
+# delete
 before = len(stored_files())
 check("delete works", client.delete(f"{URL}/{ids[1]}", headers=alice).status_code == 200)
 check("deleted image is gone", client.get(f"{URL}/{ids[1]}", headers=alice).status_code == 404)

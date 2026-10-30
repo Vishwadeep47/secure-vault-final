@@ -1,10 +1,10 @@
-"""Admin-only routes: audit log viewer, user list, summary numbers.
+"""Admin routes: audit log, user list and summary numbers.
 
-Every route needs a valid token AND the 'admin' role (checked against the
-database on each request). A normal user gets 403 and the attempt is logged.
+Each route needs a valid token and the 'admin' role, which is checked in the database
+on every request. A normal user gets 403 and the attempt is logged.
 
-What admins can NOT see: password hashes, MFA secrets, note text, images, or
-card data. The user list only shows counts of stored items.
+Admins cannot see password hashes, MFA secrets, notes, images or card data.
+The user list only shows how many items each user has.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -20,7 +20,7 @@ DEFAULT_PAGE_SIZE = 50
 
 
 def _int_arg(name, default, minimum, maximum=None):
-    """Read an integer query parameter. Returns (value, error_message)."""
+    """Read an integer from the query string. Returns (value, error_message)."""
     raw = request.args.get(name)
     if raw is None or raw == "":
         return default, None
@@ -31,14 +31,14 @@ def _int_arg(name, default, minimum, maximum=None):
     if value < minimum:
         return None, f"{name} must be at least {minimum}"
     if maximum is not None:
-        value = min(value, maximum)  # quietly cap oversized requests
+        value = min(value, maximum)  # too-large values are capped, not rejected
     return value, None
 
 
 @admin_bp.get("/logs")
 @require_auth(role="admin")
 def audit_logs():
-    """Newest first. Optional filters: ?event=login_failed&username=bob&limit=50&offset=0"""
+    """Newest first. Filters: ?event=login_failed&username=bob&limit=50&offset=0"""
     limit, error = _int_arg("limit", DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
     if error:
         return jsonify(error=error), 400
@@ -46,7 +46,7 @@ def audit_logs():
     if error:
         return jsonify(error=error), 400
 
-    # Only fixed SQL fragments are joined; every value goes in as a parameter.
+    # Only fixed pieces of SQL are joined here. Every value goes in as a parameter.
     where, params = [], []
     event = request.args.get("event", "").strip()
     if event:

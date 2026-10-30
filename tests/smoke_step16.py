@@ -45,12 +45,12 @@ carol = make_user("carol")
 for title in ("one", "two"):
     client.post("/api/vault/notes", json={"title": title, "content": "text"}, headers=bob)
 
-# --- access control -----------------------------------------------------------
+# access control
 for path in ("logs", "users", "stats"):
     check(f"/api/admin/{path}: no token is 401", client.get(f"/api/admin/{path}").status_code == 401)
     check(f"/api/admin/{path}: normal user is 403", client.get(f"/api/admin/{path}", headers=bob).status_code == 403)
 
-# --- audit log ------------------------------------------------------------------
+# audit log
 r = client.get("/api/admin/logs", headers=admin)
 check("admin can read the audit log", r.status_code == 200 and len(r.json["logs"]) > 0)
 ids = [row["id"] for row in r.json["logs"]]
@@ -79,7 +79,7 @@ page2 = client.get("/api/admin/logs?limit=3&offset=3", headers=admin).json
 check("pagination pages do not overlap",
       not ({x["id"] for x in page1["logs"]} & {x["id"] for x in page2["logs"]}) and page1["total"] == page2["total"])
 
-# --- users ----------------------------------------------------------------------
+# users
 r = client.get("/api/admin/users", headers=admin)
 users = {u["username"]: u for u in r.json["users"]}
 check("user list shows all three users", set(users) == {"alice", "bob", "carol"})
@@ -89,14 +89,14 @@ text = r.get_data(as_text=True)
 check("no password hashes or MFA secrets in the user list",
       "$argon2" not in text and "password_hash" not in text and "mfa_secret" not in text)
 
-# --- stats ----------------------------------------------------------------------
+# stats
 s = client.get("/api/admin/stats", headers=admin).json
 check("stats counts are correct",
       s["users"] == 3 and s["admins"] == 1 and s["notes"] == 2 and s["images"] == 0 and s["cards"] == 0
       and s["mfa_enabled_users"] == 0)
 check("stats include recent events", s["events_last_24h"].get("register") == 3)
 
-# --- role comes from the database, not the token ----------------------------------
+# role comes from the database, not the token
 con = sqlite3.connect(DB)
 con.execute("UPDATE users SET role='admin' WHERE username='bob'")
 con.commit()

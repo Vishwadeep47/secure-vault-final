@@ -62,7 +62,7 @@ alice = make_user("alice")
 bob = make_user("bob")
 VISA = "4242424242424242"
 
-# --- add / validate ---------------------------------------------------------
+# add / validate
 check("cards require login", client.get(URL).status_code == 401)
 r = client.post(URL, json=card(cvv="123"), headers=alice)
 check("add Visa test card (spaces allowed)", r.status_code == 201)
@@ -94,7 +94,7 @@ check("duplicate card rejected (same number, any spacing)",
 check("same number is allowed for a different user",
       client.post(URL, json=card(), headers=bob).status_code == 201)
 
-# --- nothing sensitive stored in plain ---------------------------------------
+# nothing sensitive stored in plain
 dump = dump_db()
 raw_file = open(DB, "rb").read()
 check("full card number is not in the database", VISA not in dump and VISA.encode() not in raw_file)
@@ -106,7 +106,7 @@ payload = json.loads(aes.decrypt_text(app.config["AES_KEY"], enc, f"card:1:{cid}
 check("encrypted payload holds only number, holder, expiry (no CVV)",
       set(payload) == {"number", "holder", "exp_month", "exp_year"})
 
-# --- listing and details stay masked ---------------------------------------
+# listing and details stay masked
 listing = client.get(URL, headers=alice)
 check("list is masked and shows no secrets",
       all("masked" in c and "payload_enc" not in c and "card_number" not in c for c in listing.json["cards"])
@@ -117,13 +117,13 @@ check("details show holder and expiry but a masked number",
       and VISA not in detail.get_data(as_text=True))
 check("responses are not cached", detail.headers.get("Cache-Control") == "no-store")
 
-# --- ownership --------------------------------------------------------------
+# ownership
 check("other user cannot see my card", client.get(f"{URL}/{cid}", headers=bob).status_code == 404)
 check("other user cannot reveal my card",
       client.post(f"{URL}/{cid}/reveal", json={"password": PW}, headers=bob).status_code == 404)
 check("other user cannot delete my card", client.delete(f"{URL}/{cid}", headers=bob).status_code == 404)
 
-# --- reveal needs the password again ----------------------------------------
+# reveal needs the password again
 check("reveal without password is refused",
       client.post(f"{URL}/{cid}/reveal", json={}, headers=alice).status_code == 401)
 check("reveal with wrong password is refused",
@@ -132,7 +132,7 @@ r = client.post(f"{URL}/{cid}/reveal", json={"password": PW}, headers=alice)
 check("reveal with correct password returns the full number",
       r.status_code == 200 and r.json["card_number"] == VISA)
 
-# --- reveal with MFA enabled --------------------------------------------------
+# reveal with MFA enabled
 dave = make_user("dave")
 dave_card = client.post(URL, json=card("5555555555554444"), headers=dave).json["id"]
 secret = client.post("/api/mfa/setup", headers=dave).json["secret"]
@@ -144,7 +144,7 @@ check("reveal with wrong MFA code is refused",
 r = client.post(f"{URL}/{dave_card}/reveal", json={"password": PW, "totp": pyotp.TOTP(secret).now()}, headers=dave)
 check("reveal with password + MFA works", r.status_code == 200 and r.json["card_number"] == "5555555555554444")
 
-# --- reveal is rate limited ---------------------------------------------------
+# reveal is rate limited
 carol = make_user("carol")
 carol_card = client.post(URL, json=card("378282246310005"), headers=carol).json["id"]
 for _ in range(5):
@@ -152,7 +152,7 @@ for _ in range(5):
 check("reveal locks after 5 wrong attempts",
       client.post(f"{URL}/{carol_card}/reveal", json={"password": PW}, headers=carol).status_code == 429)
 
-# --- audit log has events, never card data ------------------------------------
+# audit log has events, never card data
 audit_rows = sqlite3.connect(DB).execute("SELECT event, username FROM audit_log").fetchall()
 events = {row[0] for row in audit_rows}
 check("audit log records card events",
@@ -160,7 +160,7 @@ check("audit log records card events",
 audit_text = " ".join(f"{e} {u}" for e, u in audit_rows)
 check("audit log contains no card data", all(x not in audit_text for x in (VISA, "5555555555554444", "Asha")))
 
-# --- tampering and swapping -------------------------------------------------
+# tampering and swapping
 con = sqlite3.connect(DB)
 raw = bytearray(base64.b64decode(con.execute("SELECT payload_enc FROM cards WHERE id=?", (cid,)).fetchone()[0]))
 raw[-1] ^= 1
@@ -176,7 +176,7 @@ con.commit()
 check("card data swapped between two cards is rejected",
       client.get(f"{URL}/{ids[2]}", headers=alice).status_code == 500)
 
-# --- delete -----------------------------------------------------------------
+# delete
 check("delete works", client.delete(f"{URL}/{ids[1]}", headers=alice).status_code == 200)
 check("deleted card is gone", client.get(f"{URL}/{ids[1]}", headers=alice).status_code == 404)
 

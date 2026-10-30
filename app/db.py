@@ -1,4 +1,4 @@
-"""SQLite connection handling and schema."""
+"""SQLite connection and table definitions."""
 import sqlite3
 
 from flask import current_app, g
@@ -85,7 +85,7 @@ def close_db(_exc=None):
 
 
 def _migrate(db):
-    """Add columns that older databases (made by earlier steps) do not have yet."""
+    """Add columns that databases from earlier versions are missing."""
     columns = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
     if "token_version" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")

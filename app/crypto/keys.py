@@ -1,4 +1,4 @@
-"""Key creation and loading. Keys live OUTSIDE the database."""
+"""Creates and loads the secret keys. They are kept outside the database."""
 import base64
 import os
 import secrets
@@ -7,8 +7,9 @@ import secrets
 def load_or_create_secret(name, secrets_dir, nbytes=32):
     """Return `nbytes` of secret key material.
 
-    Order: environment variable (base64) -> file in secrets_dir -> create new file.
-    In a real deployment use a secrets manager instead of local files.
+    It looks in an environment variable (base64) first, then in a file inside
+    secrets_dir, and creates the file if neither exists. On a real server a
+    secrets manager would be better than local files.
     """
     env_val = os.environ.get(name.upper())
     if env_val:
@@ -24,7 +25,7 @@ def load_or_create_secret(name, secrets_dir, nbytes=32):
             with open(path, "wb") as f:
                 f.write(key)
             try:
-                os.chmod(path, 0o600)  # limited effect on Windows, still good practice
+                os.chmod(path, 0o600)  # does little on Windows, but harmless
             except OSError:
                 pass
 

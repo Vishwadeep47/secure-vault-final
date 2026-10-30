@@ -21,7 +21,7 @@ from tests.test_threat_model import audit_events, login
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 
 
-# ------------------------------------------------------------ H1 sign-up flooding
+# H1 sign-up flooding
 def test_H1_signups_are_limited_per_address(app, client):
     app.config["REGISTER_PER_WINDOW"] = 3
     codes = [client.post("/api/register", json={"username": f"user{i}", "password": PASSWORD}).status_code for i in range(5)]
@@ -36,7 +36,7 @@ def test_H1_invalid_signup_attempts_count_too(app, client):
     assert client.post("/api/register", json={"username": "okname", "password": PASSWORD}).status_code == 429
 
 
-# ----------------------------------------------- H2 one address trying many usernames
+# H2 one address trying many usernames
 def test_H2_logins_are_limited_per_address_across_all_usernames(app, client, alice):
     app.config["LOGIN_PER_IP"] = 5
     ratelimit.clear_all()
@@ -53,7 +53,7 @@ def test_H2_the_address_limit_also_blocks_the_right_password(app, client, alice)
     assert login(client, "alice", PASSWORD).status_code == 429
 
 
-# --------------------------------------------------- H3 memory cannot be flooded
+# H3 memory cannot be flooded
 def test_H3_failed_login_tracking_stays_bounded(monkeypatch):
     monkeypatch.setattr(ratelimit, "MAX_TRACKED", 100)
     for i in range(1000):
@@ -76,7 +76,7 @@ def test_H3_trimming_drops_the_oldest_entries_first(monkeypatch):
     assert "name-29" in ratelimit._failures and "name-0" not in ratelimit._failures
 
 
-# ----------------------------------------------------------- H4 body size limits
+# H4 body size limits
 def test_H4_huge_json_bodies_are_refused_early(client, alice):
     huge = {"title": "t", "content": "a" * 300_000}
     r = client.post("/api/vault/notes", json=huge, headers=alice)
@@ -93,7 +93,7 @@ def test_H4_the_largest_allowed_note_still_works(client, alice):
     assert r.status_code == 201
 
 
-# ----------------------------------------------------------- H5 safe error pages
+# H5 safe error pages
 def test_H5_unknown_api_address_gives_plain_json(client):
     r = client.get("/api/does-not-exist")
     assert r.status_code == 404 and r.json == {"error": "Not Found"}
@@ -122,7 +122,7 @@ def test_H5_malformed_json_is_a_clean_400(client, alice):
     assert r.status_code == 400 and "Traceback" not in r.get_data(as_text=True)
 
 
-# ------------------------------------------------------ H6 headers and cross-site use
+# H6 headers and cross-site use
 def test_H6_extra_browser_protections_are_set(client):
     h = client.get("/").headers
     assert "camera=(self)" in h["Permissions-Policy"] and "microphone=()" in h["Permissions-Policy"]
@@ -143,7 +143,7 @@ def test_H6_other_websites_are_not_allowed_to_call_the_api(client, alice):
     assert "Access-Control-Allow-Origin" not in preflight.headers
 
 
-# ------------------------------------------------------ H7 production server (Waitress)
+# H7 production server (Waitress)
 def _free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -188,7 +188,7 @@ def test_H7_waitress_refuses_oversized_requests(live_server):
         urllib.request.urlopen(request, timeout=20)
 
 
-# ------------------------------------------------------ H8 Git history scanner
+# H8 Git history scanner
 git_missing = shutil.which("git") is None
 
 
@@ -273,7 +273,7 @@ def test_H8_scanner_says_nothing_to_scan_outside_git(tmp_path):
     assert scan_git_history.scan(str(tmp_path)) is None
 
 
-# ------------------------------------------------------ H9 the whole checklist
+# H9 the whole checklist
 def test_H9_hardening_checklist_has_no_failures(monkeypatch):
     from app.auth import passwords
     from scripts import hardening_check

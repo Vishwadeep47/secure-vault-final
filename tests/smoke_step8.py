@@ -42,7 +42,7 @@ alice = make_user("alice")
 bob = make_user("bob")
 SECRET = "my very secret note text"
 
-# --- create / list / read ---------------------------------------------------
+# create / list / read
 check("notes require login", client.get("/api/vault/notes").status_code == 401)
 r = client.post("/api/vault/notes", json={"title": "First", "content": SECRET}, headers=alice)
 check("create note", r.status_code == 201)
@@ -55,7 +55,7 @@ check("read returns decrypted content", client.get(f"/api/vault/notes/{nid}", he
 stored = sqlite3.connect(DB).execute("SELECT content_enc FROM notes WHERE id=?", (nid,)).fetchone()[0]
 check("database holds ciphertext, not the text", SECRET not in stored and "secret" not in stored.lower())
 
-# --- validation -------------------------------------------------------------
+# validation
 check("empty content rejected",
       client.post("/api/vault/notes", json={"title": "x", "content": "  "}, headers=alice).status_code == 400)
 check("too-long title rejected",
@@ -63,7 +63,7 @@ check("too-long title rejected",
 check("too-long content rejected",
       client.post("/api/vault/notes", json={"title": "x", "content": "c" * 20001}, headers=alice).status_code == 400)
 
-# --- ownership --------------------------------------------------------------
+# ownership
 check("other user cannot read my note", client.get(f"/api/vault/notes/{nid}", headers=bob).status_code == 404)
 check("other user cannot edit my note",
       client.put(f"/api/vault/notes/{nid}", json={"title": "h", "content": "hacked"}, headers=bob).status_code == 404)
@@ -71,14 +71,14 @@ check("other user cannot delete my note", client.delete(f"/api/vault/notes/{nid}
 check("other user's list is empty", client.get("/api/vault/notes", headers=bob).json["notes"] == [])
 check("my note survived those attempts", client.get(f"/api/vault/notes/{nid}", headers=alice).json["content"] == SECRET)
 
-# --- update re-encrypts with a new nonce -----------------------------------
+# update re-encrypts with a new nonce
 client.put(f"/api/vault/notes/{nid}", json={"title": "First", "content": SECRET}, headers=alice)
 stored2 = sqlite3.connect(DB).execute("SELECT content_enc FROM notes WHERE id=?", (nid,)).fetchone()[0]
 check("same content re-saved gives different ciphertext", stored != stored2)
 client.put(f"/api/vault/notes/{nid}", json={"title": "Renamed", "content": "new text"}, headers=alice)
 check("update works", client.get(f"/api/vault/notes/{nid}", headers=alice).json["content"] == "new text")
 
-# --- tampering and swapping -------------------------------------------------
+# tampering and swapping
 db = sqlite3.connect(DB)
 raw = bytearray(base64.b64decode(db.execute("SELECT content_enc FROM notes WHERE id=?", (nid,)).fetchone()[0]))
 raw[-1] ^= 1
@@ -98,7 +98,7 @@ check("ciphertext swapped between two notes is rejected",
 events = {row[0] for row in sqlite3.connect(DB).execute("SELECT event FROM audit_log")}
 check("audit log records note events", {"note_created", "note_updated", "note_integrity_failure"} <= events)
 
-# --- delete -----------------------------------------------------------------
+# delete
 check("delete works", client.delete(f"/api/vault/notes/{a_id}", headers=alice).status_code == 200)
 check("deleted note is gone", client.get(f"/api/vault/notes/{a_id}", headers=alice).status_code == 404)
 

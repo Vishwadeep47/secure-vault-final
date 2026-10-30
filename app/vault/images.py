@@ -1,19 +1,16 @@
-"""Encrypted image vault (internship Task 3 in action).
+"""Encrypted image vault (internship Task 3 in use).
 
-Upload -> validate it really is an image -> encrypt the raw bytes with AES-256-GCM
-(fresh random nonce) -> save the ciphertext to disk under a random name.
-Only metadata (name, type, size) is kept in the database.
+An upload is checked to be a real image, then its bytes are encrypted with
+AES-256-GCM and written to disk under a random name. The database keeps only the
+name, type and size.
 
-- File type is detected by Pillow from the actual bytes, never trusted from the
-  filename or the client's Content-Type.
-- Each file is bound to its owner and image id (AAD), so it cannot be moved to
-  another user or swapped with another image.
-- Decrypted images are sent with `Cache-Control: no-store` so they are not cached.
+The type comes from Pillow reading the actual bytes, never from the file name or the
+browser's Content-Type. Each file is tied to its owner and image id, and decrypted
+images are sent with `Cache-Control: no-store`.
 """
 import io
 import os
 import secrets
-from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, g, jsonify, request, send_file
 from PIL import Image, UnidentifiedImageError
@@ -22,6 +19,7 @@ from werkzeug.utils import secure_filename
 from app.auth.decorators import require_auth
 from app.crypto import aes
 from app.db import get_db
+from app.helpers import now_iso as _now
 from app.security.audit import log_event
 
 images_bp = Blueprint("images", __name__, url_prefix="/api/vault/images")
@@ -34,16 +32,12 @@ ALLOWED_FORMATS = {
 }
 
 
-def _now():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
 def _aad(user_id, image_id):
     return f"image:{user_id}:{image_id}"
 
 
 def _inspect_image(data):
-    """Return (mime, error). Checks the bytes are a real, allowed, reasonably sized image."""
+    """Return (mime, error) after checking the bytes are a real, allowed, not-too-big image."""
     try:
         with Image.open(io.BytesIO(data)) as img:
             fmt = img.format
@@ -52,7 +46,7 @@ def _inspect_image(data):
                 return None, "Only PNG, JPEG, GIF, or WEBP images are allowed"
             if width * height > current_app.config["IMAGE_MAX_PIXELS"]:
                 return None, "Image dimensions are too large"
-            img.verify()  # detects truncated or corrupt files
+            img.verify()  # catches truncated or corrupt files
     except Image.DecompressionBombError:
         return None, "Image dimensions are too large"
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
@@ -86,7 +80,7 @@ def upload_image():
         return jsonify(error=error), 400
 
     name = secure_filename(upload.filename or "")[:100] or "image"
-    stored_name = secrets.token_hex(16) + ".bin"  # random, reveals nothing
+    stored_name = secrets.token_hex(16) + ".bin"  # random name, nothing to guess from
     uid = g.user["id"]
 
     db = get_db()

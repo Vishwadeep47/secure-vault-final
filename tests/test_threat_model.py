@@ -29,7 +29,7 @@ from tests.helpers import (HOLDER, NOTE_TEXT, PAN, PASSWORD, b64url, b64url_deco
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 
 
-# ============================================================ small shortcuts
+# small shortcuts
 def login(client, name, password=PASSWORD, **extra):
     return client.post("/api/login", json={"username": name, "password": password, **extra})
 
@@ -68,7 +68,7 @@ def image_file(app, image_id):
     return os.path.join(app.config["UPLOAD_DIR"], stored)
 
 
-# ======================================================= T01 database stolen
+# T01 database stolen
 def test_T01_stolen_database_and_files_reveal_nothing(app, client, alice):
     add_note(client, alice)
     add_card(client, alice)
@@ -98,7 +98,7 @@ def test_T01_uploaded_images_are_encrypted_on_disk(app, client, alice):
     assert b"\x89PNG" not in on_disk and on_disk != png_bytes(1)
 
 
-# ====================================================== T02 password brute force
+# T02 password brute force
 def test_T02_account_locks_after_five_wrong_passwords(client, alice):
     for _ in range(5):
         assert login(client, "alice", "wrong-password-xx").status_code == 401
@@ -131,7 +131,7 @@ def test_T02_weak_passwords_are_refused_at_registration(client):
         assert client.post("/api/register", json={"username": "weak1", "password": weak}).status_code == 400
 
 
-# ============================================================ T03 stolen password
+# T03 stolen password
 def test_T03_password_alone_does_not_log_in_when_mfa_is_on(client, alice):
     secret = enable_mfa(client, alice)
     r = login(client, "alice")
@@ -160,7 +160,7 @@ def test_T03_revealing_a_card_needs_the_password_again(client, alice):
     assert client.post(f"/api/vault/cards/{card}/reveal", json={"password": PASSWORD}, headers=alice).json["card_number"] == PAN
 
 
-# ======================================================== T04 username enumeration
+# T04 username enumeration
 def test_T04_login_error_is_identical_for_unknown_user_and_wrong_password(client, alice):
     unknown = client.post("/api/login", json={"username": "nobody", "password": "whatever-long-password"})
     wrong = client.post("/api/login", json={"username": "alice", "password": "wrong-long-password-1"})
@@ -185,7 +185,7 @@ def test_T04_unknown_user_still_costs_a_password_hash_check(client, monkeypatch)
     assert len(calls) == 1  # same work as for a real account, so timing does not give it away
 
 
-# ============================================================ T05 token attacks
+# T05 token attacks
 def _claims(app, name, **overrides):
     claims = {"sub": str(user_id(app, name)), "role": "user", "ver": 0, "iat": int(time.time()), "exp": int(time.time()) + 900}
     claims.update(overrides)
@@ -225,7 +225,7 @@ def test_T05_missing_or_malformed_authorization_header_is_rejected(client, alice
     assert client.get("/api/me", headers={"Authorization": header}).status_code == 401
 
 
-# ==================================================== T06 tampered stored data
+# T06 tampered stored data
 def test_T06_edited_note_fails_the_integrity_check(app, client, alice):
     note = add_note(client, alice)
     con = db(app)
@@ -257,7 +257,7 @@ def test_T06_edited_card_data_fails_the_integrity_check(app, client, alice):
     assert "card_integrity_failure" in audit_events(app)
 
 
-# ============================================ T07 ciphertext moved to another record
+# T07 ciphertext moved to another record
 def test_T07_note_copied_to_another_users_row_cannot_be_read(app, client, alice, bob):
     a, b = add_note(client, alice), add_note(client, bob, content="bob's own text")
     con = db(app)
@@ -291,7 +291,7 @@ def test_T07_image_file_copied_to_another_users_record_cannot_be_read(app, clien
     assert client.get(f"/api/vault/images/{b}", headers=bob).status_code == 500
 
 
-# ======================================================= T08 reading other users' data
+# T08 reading other users' data
 def test_T08_another_user_gets_404_for_every_route_and_every_id(client, alice, bob):
     note, image, card = add_note(client, alice), add_image(client, alice), add_card(client, alice)
     for i in range(1, 6):  # includes the real ids and guesses around them
@@ -311,7 +311,7 @@ def test_T08_another_user_gets_404_for_every_route_and_every_id(client, alice, b
     assert client.get(f"/api/vault/cards/{card}", headers=alice).status_code == 200
 
 
-# =========================================================== T09 admin access
+# T09 admin access
 @pytest.mark.parametrize("path", ["/api/admin/logs", "/api/admin/users", "/api/admin/stats"])
 def test_T09_normal_user_cannot_use_admin_routes(client, admin, alice, path):
     assert client.get(path).status_code == 401
@@ -337,7 +337,7 @@ def test_T09_admin_screens_never_expose_secrets(client, admin, alice):
     assert "$argon2" not in text and "password_hash" not in text and "mfa_secret" not in text
 
 
-# =========================================================== T10 repeated encryption
+# T10 repeated encryption
 def test_T10_same_text_never_encrypts_to_the_same_output():
     key = os.urandom(32)
     outputs = {aes.encrypt_text(key, "identical text", "user:1") for _ in range(500)}
@@ -354,13 +354,13 @@ def test_T10_the_encryption_key_is_256_bits(app):
     assert len(app.config["AES_KEY"]) == 32
 
 
-# ======================================================== T11 face spoofing (deferred)
+# T11 face spoofing (deferred)
 @pytest.mark.skip(reason="Face authentication is deferred; add liveness and spoof tests when Steps 12-13 are built")
 def test_T11_printed_photo_is_rejected():
     raise AssertionError("not built yet")
 
 
-# ======================================================== T12 card data leakage
+# T12 card data leakage
 def test_T12_cvv_is_never_stored(app, client, alice):
     r = client.post("/api/vault/cards", json=card_body(cvv="737"), headers=alice)
     assert r.status_code == 201 and "737" not in r.get_data(as_text=True) and "cvv" not in r.json
@@ -403,7 +403,7 @@ def test_T12_the_same_card_cannot_be_saved_twice(client, alice):
     assert client.post("/api/vault/cards", json=card_body("4242 4242 4242 4242"), headers=alice).status_code == 409
 
 
-# ==================================================== T13 secrets committed to Git
+# T13 secrets committed to Git
 SKIP_DIRS = {".git", ".secrets", "venv", ".venv", "__pycache__", "models", "uploads", "node_modules", ".pytest_cache"}
 SKIP_SUFFIXES = (".db", ".pyc", ".zip", ".onnx", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin")
 
@@ -456,7 +456,7 @@ def test_T13_key_folder_is_not_reachable_from_the_web(client):
         assert r.status_code == 404
 
 
-# ================================================================== T14 SQL injection
+# T14 SQL injection
 INJECTIONS = ["' OR '1'='1", "admin' --", "x'; DROP TABLE users; --", "\" OR \"\"=\"", "1; DELETE FROM notes"]
 
 
@@ -491,7 +491,7 @@ def test_T14_odd_ids_in_the_address_are_rejected(client, alice):
         assert client.get(f"/api/vault/notes/{bad}", headers=alice).status_code == 404
 
 
-# ======================================================= T15 password reset abuse
+# T15 password reset abuse
 @pytest.fixture()
 def inbox(monkeypatch):
     issued = []
@@ -549,7 +549,7 @@ def test_T15_resetting_the_password_does_not_switch_off_mfa(client, alice, inbox
     assert login(client, "alice", "brand-new-long-password", totp=pyotp.TOTP(secret).now()).status_code == 200
 
 
-# ================================================== T16 sessions that should be over
+# T16 sessions that should be over
 def test_T16_logout_ends_every_open_session(client, alice):
     other = bearer(login(client, "alice").json["token"])
     assert client.post("/api/logout", headers=alice).status_code == 200
@@ -578,7 +578,7 @@ def test_T16_changing_a_password_needs_the_current_one(client, alice):
     assert client.get("/api/me", headers=alice).status_code == 200
 
 
-# =============================================== T17 attacks through the browser
+# T17 attacks through the browser
 def test_T17_pages_carry_strict_browser_security_headers(client):
     for path in ("/", "/api/health", "/static/js/main.js"):
         h = client.get(path).headers

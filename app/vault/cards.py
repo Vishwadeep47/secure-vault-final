@@ -1,21 +1,17 @@
-"""Card vault (internship Task 5 in action) - educational demo, not PCI DSS certified.
+"""Card vault (internship Task 5 in use). A learning project, not PCI DSS compliant,
+so only use test numbers like 4242 4242 4242 4242, never real cards.
 
-What is stored for each card:
-  - token        random "tok_..." id that stands in for the card number
-  - last4, brand shown in lists (not secret)
-  - fingerprint  keyed hash (HMAC) used only to detect duplicates, cannot be reversed
-  - payload_enc  AES-256-GCM encrypted JSON: full number, holder name, expiry
+For each card we keep:
+  token        a random "tok_..." id that stands in for the number
+  last4, brand shown in the list
+  fingerprint  keyed hash (HMAC), only used to spot duplicates
+  payload_enc  the full number, holder name and expiry, encrypted with AES-256-GCM
 
-What is NEVER stored: the CVV. If a client sends one it is ignored.
+The CVV is never stored. If the client sends one it is ignored.
 
-Rules enforced:
-  - Luhn checksum + expiry validation on input
-  - API responses always show a masked number ("**** **** **** 4242")
-  - The full number is only returned by /reveal, which asks for the password
-    again (and the MFA code if MFA is on), is rate limited, and is audit logged
-  - Card data is never written to the audit log
-  - Responses are sent with Cache-Control: no-store
-Use only test numbers such as 4242 4242 4242 4242 - never real cards.
+Lists and details show a masked number. The full number only comes from /reveal,
+which asks for the password again (and the MFA code if MFA is on), is rate limited
+and is written to the audit log. Card data itself never goes in the log.
 """
 import hashlib
 import hmac
@@ -27,13 +23,14 @@ from datetime import datetime, timezone
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify
 
 from app.auth import mfa
 from app.auth.decorators import require_auth
 from app.auth.passwords import verify_password
 from app.crypto import aes
 from app.db import get_db
+from app.helpers import json_body, now_iso as _now
 from app.security import ratelimit
 from app.security.audit import log_event
 
@@ -49,22 +46,12 @@ def _no_store(response):
     return response
 
 
-# ------------------------------------------------------------------ helpers
-def _now():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def _json():
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else {}
-
-
 def _aad(user_id, card_id):
     return f"card:{user_id}:{card_id}"
 
 
 def luhn_valid(number):
-    """Luhn checksum used by card numbers (catches typos)."""
+    """Luhn checksum. Card numbers are built to pass it, so it catches typing mistakes."""
     total = 0
     for i, ch in enumerate(reversed(number)):
         digit = int(ch)
@@ -91,7 +78,7 @@ def mask(last4):
 
 
 def _fingerprint(user_id, number):
-    # Separate sub-key derived from the master key, so the AES key is not reused.
+    # Derive a separate key for the HMAC so the AES key is not used for two jobs.
     subkey = HKDF(
         algorithm=hashes.SHA256(), length=32, salt=None,
         info=b"securevault-card-fingerprint",
@@ -125,7 +112,7 @@ def _get_owned(card_id):
 
 
 def _public(row):
-    """Safe fields only - nothing here can reveal the card number."""
+    """Only fields that are safe to show. None of them reveals the card number."""
     return {
         "id": row["id"],
         "token": row["token"],
@@ -144,12 +131,11 @@ def _decrypt_payload(row):
     return json.loads(raw)
 
 
-# ------------------------------------------------------------------- routes
 @cards_bp.post("")
 @require_auth()
 def add_card():
-    data = _json()
-    # Any "cvv" field is deliberately ignored and never read, stored, or logged.
+    data = json_body()
+    # A "cvv" field, if sent, is ignored on purpose: never read, stored or logged.
     number = re.sub(r"[ -]", "", str(data.get("card_number", "")))
     holder = str(data.get("holder_name", "")).strip()
     label = str(data.get("label", "")).strip()
@@ -191,7 +177,7 @@ def add_card():
     db.execute("UPDATE cards SET payload_enc = ? WHERE id = ?", (encrypted, card_id))
     db.commit()
 
-    log_event("card_added", g.user["username"])  # event only - never card data
+    log_event("card_added", g.user["username"])  # the event only, never card data
     return jsonify(
         id=card_id, token=token, label=label, brand=brand, last4=last4, masked=mask(last4)
     ), 201
@@ -221,13 +207,13 @@ def card_details(card_id):
     details.update(
         holder=payload["holder"], exp_month=payload["exp_month"], exp_year=payload["exp_year"]
     )
-    return jsonify(details)  # number stays masked
+    return jsonify(details)  # the number stays masked here
 
 
 @cards_bp.post("/<int:card_id>/reveal")
 @require_auth()
 def reveal_card(card_id):
-    """Return the full card number after re-checking password (and MFA if enabled)."""
+    """Give back the full card number after re-checking the password (and MFA if it is on)."""
     user = g.user
     username = user["username"]
     row = _get_owned(card_id)
@@ -238,7 +224,7 @@ def reveal_card(card_id):
         log_event("card_reveal_locked", username)
         return jsonify(error="Too many failed attempts. Try again later."), 429
 
-    data = _json()
+    data = json_body()
     if not verify_password(user["password_hash"], str(data.get("password", ""))):
         ratelimit.register_failure(username)
         log_event("card_reveal_denied", username)
@@ -248,11 +234,7 @@ def reveal_card(card_id):
         code = str(data.get("totp", "")).strip()
         if not code:
             return jsonify(mfa_required=True), 401
-        # Same AAD format as app/auth/routes.py (_mfa_aad)
-        secret = aes.decrypt_text(
-            current_app.config["AES_KEY"], user["mfa_secret"], f"mfa:{user['id']}"
-        )
-        if not mfa.verify_code(secret, code):
+        if not mfa.code_matches(user, code):
             ratelimit.register_failure(username)
             log_event("card_reveal_denied", username)
             return jsonify(error="Invalid MFA code"), 401

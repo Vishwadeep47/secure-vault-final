@@ -1,9 +1,9 @@
-"""In-memory limits: login lockout per account, and request counters per key.
+"""Login lockout per account, plus request counters per key (per IP, per username).
 
-Limitations (say these in the viva):
-  - State resets when the server restarts. Use Redis or a database table to keep it.
-  - Memory is bounded: if someone floods us with random names, the oldest entries are
-    dropped (MAX_TRACKED). The per-IP limits in the routes keep that flood small.
+Everything is kept in memory, which has two limits:
+  - It is forgotten when the server restarts. Redis or a database table would fix that.
+  - If someone floods it with random names, the oldest entries are dropped once
+    MAX_TRACKED is reached. The per-IP limits in the routes keep that flood small.
 """
 import threading
 import time
@@ -18,10 +18,10 @@ _hits = {}      # key -> list of request timestamps
 
 
 def _trim(table, age_of):
-    """Drop the oldest entries when a table grows past MAX_TRACKED (call with the lock held)."""
+    """Drop the oldest entries once a table passes MAX_TRACKED. Call this with the lock held."""
     if len(table) <= MAX_TRACKED:
         return
-    keep = int(MAX_TRACKED * 0.9)  # trim in a batch so this does not run on every call
+    keep = int(MAX_TRACKED * 0.9)  # cut down in one batch so we do not re-sort on every call
     for key in sorted(table, key=lambda k: age_of(table[k]))[: len(table) - keep]:
         del table[key]
 
@@ -50,7 +50,7 @@ def clear_failures(username):
 
 
 def too_many_requests(key, limit, window_seconds):
-    """Count a request for `key`; return True if it exceeds `limit` per window."""
+    """Count one request for `key`. Returns True if it is over `limit` within the window."""
     now = time.time()
     with _lock:
         recent = [t for t in _hits.get(key, []) if now - t < window_seconds]
@@ -64,7 +64,7 @@ def too_many_requests(key, limit, window_seconds):
 
 
 def clear_all():
-    """Forget everything (used by tests)."""
+    """Forget everything. Only the tests use this."""
     with _lock:
         _failures.clear()
         _hits.clear()

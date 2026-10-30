@@ -1,25 +1,22 @@
-"""Password reset ("forgot password") and password change (Task 6, part 3).
+"""Forgot-password, reset and change-password routes (internship Task 6, part 3).
 
-Reset flow
+Reset works in two steps:
   1. POST /api/auth/password/forgot  {username}
-        Always answers with the same message, whether or not the account exists.
-        Creates a random token, stores ONLY its SHA-256 hash, valid 15 minutes.
-        The token is delivered through security/mailer.py (console in development).
+     Gives the same answer whether or not the account exists. For a real account it
+     makes a random token, stores only its SHA-256 hash, and sends the token through
+     security/mailer.py. The token is valid for 15 minutes.
   2. POST /api/auth/password/reset   {token, new_password}
-        Token works once. Sets the new password and ends all older sessions.
+     The token works once. It sets the new password and logs out all older sessions.
 
-Safety rules
-  - Token is 256 bits of randomness and is stored hashed, like a password.
+Other points:
   - A new "forgot" request replaces any older token for that account.
-  - Requests are rate limited per username and per IP; unknown and real usernames
-    are limited identically, so limits reveal nothing.
-  - Reset changes only the password. If the account has MFA, login still needs the code.
-  - Changing a password raises token_version, so stolen/old session tokens stop working.
+  - Both steps are rate limited, and unknown usernames are limited the same way as
+    real ones, so the limit does not reveal which accounts exist.
+  - A reset only changes the password. If the account has MFA, login still needs the code.
 """
 import hashlib
 import secrets
 import time
-from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, g, jsonify, request
 
@@ -27,42 +24,25 @@ from app.auth import mfa
 from app.auth.decorators import require_auth
 from app.auth.passwords import hash_password, verify_password
 from app.auth.tokens import create_token
-from app.crypto import aes
 from app.db import get_db
+from app.helpers import json_body, now_iso, password_length_error
 from app.security import mailer, ratelimit
 from app.security.audit import log_event
 
 password_bp = Blueprint("password", __name__, url_prefix="/api/auth/password")
 
-GENERIC_FORGOT_MESSAGE = "If that account exists, a reset token has been issued."
-
-
-def _json():
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else {}
-
-
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+FORGOT_MESSAGE = "If that account exists, a reset token has been issued."
 
 
 def _hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _password_error(password):
-    cfg = current_app.config
-    if not (cfg["MIN_PASSWORD_LEN"] <= len(password) <= cfg["MAX_PASSWORD_LEN"]):
-        return f"Password must be {cfg['MIN_PASSWORD_LEN']}-{cfg['MAX_PASSWORD_LEN']} characters"
-    return None
-
-
 @password_bp.post("/forgot")
 def forgot_password():
-    username = str(_json().get("username", "")).strip().lower()[:64]
+    username = str(json_body().get("username", "")).strip().lower()[:64]
     cfg = current_app.config
 
-    # Same limit for real and unknown usernames, so it leaks nothing.
     if ratelimit.too_many_requests(
         f"reset-request:{username}", cfg["RESET_REQUESTS_PER_WINDOW"], cfg["RESET_WINDOW_SECONDS"]
     ):
@@ -76,21 +56,21 @@ def forgot_password():
     else:
         token = secrets.token_urlsafe(32)
         expires_at = int(time.time()) + cfg["RESET_TOKEN_MINUTES"] * 60
-        db.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))  # replaces older tokens
+        db.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))  # drop older tokens
         db.execute(
             "INSERT INTO password_resets (user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
-            (user["id"], _hash_token(token), expires_at, _now_iso()),
+            (user["id"], _hash_token(token), expires_at, now_iso()),
         )
         db.commit()
         mailer.send_reset_token(user["username"], token)
         log_event("reset_requested", user["username"])  # the token itself is never logged
 
-    return jsonify(message=GENERIC_FORGOT_MESSAGE)
+    return jsonify(message=FORGOT_MESSAGE)
 
 
 @password_bp.post("/reset")
 def reset_password():
-    data = _json()
+    data = json_body()
     token = str(data.get("token", "")).strip()
     new_password = str(data.get("new_password", ""))
     cfg = current_app.config
@@ -101,8 +81,8 @@ def reset_password():
         log_event("reset_attempts_limited")
         return jsonify(error="Too many attempts. Try again later."), 429
 
-    # Check the password first so a typo does not use up the token.
-    error = _password_error(new_password)
+    # Check the password before the token, so a typo does not use the token up.
+    error = password_length_error(new_password)
     if error:
         return jsonify(error=error), 400
 
@@ -125,7 +105,7 @@ def reset_password():
     db.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (row["id"],))
     db.commit()
 
-    ratelimit.clear_failures(user["username"])  # a locked-out user can get back in
+    ratelimit.clear_failures(user["username"])  # so a locked-out user can log in again
     log_event("password_reset", user["username"])
     return jsonify(message="Password updated. Please log in with your new password.")
 
@@ -133,10 +113,10 @@ def reset_password():
 @password_bp.post("/change")
 @require_auth()
 def change_password():
-    """Logged-in password change. Needs the current password (and MFA code if MFA is on)."""
+    """Change the password while logged in. Needs the current password, and the MFA code if MFA is on."""
     user = g.user
     username = user["username"]
-    data = _json()
+    data = json_body()
 
     if ratelimit.is_locked(username):
         log_event("password_change_locked", username)
@@ -154,15 +134,12 @@ def change_password():
         code = str(data.get("totp", "")).strip()
         if not code:
             return jsonify(mfa_required=True), 401
-        secret = aes.decrypt_text(  # same AAD format as app/auth/routes.py
-            current_app.config["AES_KEY"], user["mfa_secret"], f"mfa:{user['id']}"
-        )
-        if not mfa.verify_code(secret, code):
+        if not mfa.code_matches(user, code):
             ratelimit.register_failure(username)
             log_event("password_change_denied", username)
             return jsonify(error="Invalid MFA code"), 401
 
-    error = _password_error(new_password)
+    error = password_length_error(new_password)
     if error:
         return jsonify(error=error), 400
     if new_password == current:
@@ -176,7 +153,7 @@ def change_password():
     db.commit()
     log_event("password_changed", username)
 
-    # Older sessions are now invalid; hand back a fresh token for this one.
+    # Older sessions are dead now, so give this one a fresh token.
     new_token = create_token(
         user["id"], user["role"], current_app.config["JWT_SECRET"],
         current_app.config["TOKEN_MINUTES"], user["token_version"] + 1,

@@ -15,7 +15,7 @@
     return SV.appShell("vault", [tabs, body]);
   };
 
-  /* ------------------------------------------------------------------ notes */
+  /* notes */
   SV.tabs.notes = function (root) {
     let editingId = null;
     const title = field("Title", { type: "text", maxlength: "200", required: true });
@@ -93,7 +93,7 @@
     load();
   };
 
-  /* ----------------------------------------------------------------- images */
+  /* images */
   SV.tabs.images = function (root) {
     let urls = [];
     function revokeAll() { urls.forEach(function (u) { URL.revokeObjectURL(u); }); urls = []; }
@@ -150,7 +150,7 @@
     load();
   };
 
-  /* ------------------------------------------------------------------ cards */
+  /* cards */
   SV.tabs.cards = function (root) {
     const timers = [];
     SV.onLeave(function () { timers.forEach(clearInterval); });

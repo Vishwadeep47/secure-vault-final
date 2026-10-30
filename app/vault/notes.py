@@ -1,35 +1,24 @@
-"""Encrypted notes (internship Task 1 in action).
+"""Encrypted notes (internship Task 1 in use).
 
-- Title is stored in plain text so notes can be listed.
-- Content is encrypted with AES-256-GCM before it reaches the database.
-- Each ciphertext is bound to BOTH its owner and its note id (AAD), so it cannot
-  be moved to another user's note, or swapped with another note of the same user.
-- Every query filters by the logged-in user's id: other people's notes look
-  like they do not exist (404).
+The title is stored as plain text so the list page can show it. The content is
+encrypted with AES-256-GCM before it goes into the database, tied to the owner and
+the note id so it cannot be moved to another user or swapped with another note.
+Every query also filters on the logged-in user's id, so someone else's note
+looks like it does not exist (404).
 """
-from datetime import datetime, timezone
-
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify
 
 from app.auth.decorators import require_auth
 from app.crypto import aes
 from app.db import get_db
+from app.helpers import json_body, now_iso as _now
 from app.security.audit import log_event
 
 notes_bp = Blueprint("notes", __name__, url_prefix="/api/vault/notes")
 
 
-def _now():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
 def _aad(user_id, note_id):
     return f"note:{user_id}:{note_id}"
-
-
-def _json():
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else {}
 
 
 def _validate(data):
@@ -55,14 +44,15 @@ def _get_owned(note_id):
 @notes_bp.post("")
 @require_auth()
 def create_note():
-    title, content, error = _validate(_json())
+    title, content, error = _validate(json_body())
     if error:
         return jsonify(error=error), 400
 
     db = get_db()
     uid = g.user["id"]
     now = _now()
-    # Insert first to get the id, then encrypt with the id in the AAD (one transaction).
+    # The note id is part of the AAD, so insert first to get it, then encrypt.
+    # Both steps are in one transaction.
     cur = db.execute(
         "INSERT INTO notes (user_id, title, content_enc, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (uid, title, "", now, now),
@@ -114,11 +104,11 @@ def read_note(note_id):
 def update_note(note_id):
     if _get_owned(note_id) is None:
         return jsonify(error="Not found"), 404
-    title, content, error = _validate(_json())
+    title, content, error = _validate(json_body())
     if error:
         return jsonify(error=error), 400
 
-    encrypted = aes.encrypt_text(  # new random nonce on every update
+    encrypted = aes.encrypt_text(  # a new random nonce every time
         current_app.config["AES_KEY"], content, _aad(g.user["id"], note_id)
     )
     db = get_db()
