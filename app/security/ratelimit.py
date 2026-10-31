@@ -1,70 +1,85 @@
 """Login lockout per account, plus request counters per key (per IP, per username).
 
-Everything is kept in memory, which has two limits:
-  - It is forgotten when the server restarts. Redis or a database table would fix that.
-  - If someone floods it with random names, the oldest entries are dropped once
-    MAX_TRACKED is reached. The per-IP limits in the routes keep that flood small.
+Both are kept in the database instead of in memory, so a server restart does not
+reset a lockout or a counter that an attacker is part-way through. Old rows are
+deleted as a side effect of normal use, so the tables do not grow forever.
 """
-import threading
 import time
 
-from flask import current_app
+from flask import current_app, has_app_context
 
-MAX_TRACKED = 10000  # most entries kept per table
+from app.db import get_db
 
-_lock = threading.Lock()
-_failures = {}  # username -> (failure_count, first_failure_timestamp)
-_hits = {}      # key -> list of request timestamps
-
-
-def _trim(table, age_of):
-    """Drop the oldest entries once a table passes MAX_TRACKED. Call this with the lock held."""
-    if len(table) <= MAX_TRACKED:
-        return
-    keep = int(MAX_TRACKED * 0.9)  # cut down in one batch so we do not re-sort on every call
-    for key in sorted(table, key=lambda k: age_of(table[k]))[: len(table) - keep]:
-        del table[key]
+# Rows older than this are deleted when touched, even if nothing else bounds
+# the table. It is far bigger than any lockout or counting window the app uses.
+MAX_AGE_SECONDS = 24 * 3600
 
 
 def is_locked(username):
     cfg = current_app.config
-    with _lock:
-        count, first = _failures.get(username, (0, 0.0))
-        if count >= cfg["MAX_FAILED_LOGINS"]:
-            if time.time() - first < cfg["LOCKOUT_SECONDS"]:
-                return True
-            _failures.pop(username, None)
+    db = get_db()
+    row = db.execute(
+        "SELECT count, first_failure_at FROM login_failures WHERE username = ?", (username,)
+    ).fetchone()
+    if row is None:
+        return False
+    if row["count"] < cfg["MAX_FAILED_LOGINS"]:
+        return False
+    if time.time() - row["first_failure_at"] < cfg["LOCKOUT_SECONDS"]:
+        return True
+    db.execute("DELETE FROM login_failures WHERE username = ?", (username,))
+    db.commit()
     return False
 
 
 def register_failure(username):
-    with _lock:
-        count, first = _failures.get(username, (0, time.time()))
-        _failures[username] = (count + 1, first)
-        _trim(_failures, lambda value: value[1])
+    db = get_db()
+    row = db.execute(
+        "SELECT count, first_failure_at FROM login_failures WHERE username = ?", (username,)
+    ).fetchone()
+    now = time.time()
+    if row is None:
+        db.execute(
+            "INSERT INTO login_failures (username, count, first_failure_at) VALUES (?, 1, ?)",
+            (username, now),
+        )
+    else:
+        db.execute(
+            "UPDATE login_failures SET count = count + 1 WHERE username = ?", (username,)
+        )
+    # Forget failures nobody followed up on, so a flood of made-up usernames
+    # does not grow this table without bound.
+    db.execute("DELETE FROM login_failures WHERE first_failure_at < ?", (now - MAX_AGE_SECONDS,))
+    db.commit()
 
 
 def clear_failures(username):
-    with _lock:
-        _failures.pop(username, None)
+    db = get_db()
+    db.execute("DELETE FROM login_failures WHERE username = ?", (username,))
+    db.commit()
 
 
 def too_many_requests(key, limit, window_seconds):
     """Count one request for `key`. Returns True if it is over `limit` within the window."""
+    db = get_db()
     now = time.time()
-    with _lock:
-        recent = [t for t in _hits.get(key, []) if now - t < window_seconds]
-        if len(recent) >= limit:
-            _hits[key] = recent
-            return True
-        recent.append(now)
-        _hits[key] = recent
-        _trim(_hits, lambda stamps: stamps[-1] if stamps else 0)
-        return False
+    recent = db.execute(
+        "SELECT COUNT(*) FROM rate_hits WHERE rkey = ? AND ts > ?", (key, now - window_seconds)
+    ).fetchone()[0]
+    if recent >= limit:
+        return True
+    db.execute("INSERT INTO rate_hits (rkey, ts) VALUES (?, ?)", (key, now))
+    db.execute("DELETE FROM rate_hits WHERE ts < ?", (now - MAX_AGE_SECONDS,))
+    db.commit()
+    return False
 
 
 def clear_all():
-    """Forget everything. Only the tests use this."""
-    with _lock:
-        _failures.clear()
-        _hits.clear()
+    """Forget every lockout and counter. Nothing in the app calls this; it exists
+    so a test can start a clean slate partway through, inside an app context."""
+    if not has_app_context():
+        return
+    db = get_db()
+    db.execute("DELETE FROM login_failures")
+    db.execute("DELETE FROM rate_hits")
+    db.commit()

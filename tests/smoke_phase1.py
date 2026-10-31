@@ -33,7 +33,7 @@ def check(name, condition):
     passed += 1
 
 
-# crypto
+# --- crypto -----------------------------------------------------------------
 key = app.config["AES_KEY"]
 c1 = aes.encrypt_text(key, "hello", "user:1")
 c2 = aes.encrypt_text(key, "hello", "user:1")
@@ -52,7 +52,7 @@ try:
 except aes.InvalidTag:
     check("tampered ciphertext is rejected", True)
 
-# auth
+# --- auth -------------------------------------------------------------------
 check("health endpoint", client.get("/api/health").json == {"status": "ok"})
 
 r = client.post("/api/register", json={"username": "admin1", "password": "correct-horse-battery"})
@@ -79,7 +79,7 @@ check("/api/me without token is 401", client.get("/api/me").status_code == 401)
 check("forged token is 401",
       client.get("/api/me", headers={"Authorization": "Bearer abc.def.ghi"}).status_code == 401)
 
-# MFA
+# --- MFA --------------------------------------------------------------------
 secret = client.post("/api/mfa/setup", headers=h).json["secret"]
 check("MFA secret stored encrypted",
       sqlite3.connect(app.config["DB_PATH"]).execute(
@@ -100,7 +100,7 @@ check("login with correct MFA code works",
       client.post("/api/login", json={"username": "admin1", "password": "correct-horse-battery",
                                        "totp": pyotp.TOTP(secret).now()}).status_code == 200)
 
-# lockout and audit
+# --- lockout and audit ------------------------------------------------------
 for _ in range(5):
     client.post("/api/login", json={"username": "ghost", "password": "whatever-password"})
 check("locked after 5 failed attempts",

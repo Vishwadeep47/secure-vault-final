@@ -3,6 +3,7 @@
   "use strict";
   const SV = window.SV;
   const PUBLIC = ["login", "register", "forgot"];
+  const ALWAYS_ACCESSIBLE = PUBLIC.concat(["shared"]); // "shared" works whether or not you're logged in
 
   SV.navigate = function (hash) {
     if (window.location.hash === hash) render(); else window.location.hash = hash;
@@ -25,8 +26,9 @@
     const route = parse();
     const session = SV.session.get();
     const isPublic = PUBLIC.indexOf(route.name) >= 0;
+    const isAlwaysAccessible = ALWAYS_ACCESSIBLE.indexOf(route.name) >= 0;
 
-    if (!session && !isPublic) return SV.navigate("#/login");
+    if (!session && !isAlwaysAccessible) return SV.navigate("#/login");
     if (session && (route.name === "" || isPublic)) return SV.navigate("#/vault/notes");
     if (route.name === "admin" && session.role !== "admin") return SV.navigate("#/vault/notes");
     if (!SV.views[route.name]) return SV.navigate(session ? "#/vault/notes" : "#/login");
@@ -37,4 +39,25 @@
 
   window.addEventListener("hashchange", render);
   render();
+
+  /* Idle auto-logout: someone who walks away from an unlocked device should
+     not leave a live session sitting open indefinitely. This is separate
+     from (and shorter than) the 15-minute token lifetime - that one limits
+     how long a token works at all; this one reacts to the person actually
+     being gone. */
+  const IDLE_LIMIT_MS = 5 * 60 * 1000;
+  let idleTimer = null;
+
+  function armIdleTimer() {
+    if (!SV.session.get()) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (SV.session.get()) SV.logout("Logged out after 5 minutes of inactivity.");
+    }, IDLE_LIMIT_MS);
+  }
+
+  ["mousemove", "keydown", "mousedown", "touchstart", "scroll"].forEach(function (evt) {
+    window.addEventListener(evt, armIdleTimer, { passive: true });
+  });
+  armIdleTimer();
 })();

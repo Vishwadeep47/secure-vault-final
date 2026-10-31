@@ -1,4 +1,4 @@
-"""Creates the Flask app: settings, keys, database, routes, error pages and security headers."""
+"""SecureVault application factory."""
 import os
 
 from flask import Flask, jsonify, render_template, request
@@ -6,7 +6,7 @@ from werkzeug.exceptions import HTTPException
 
 from app.config import BASE_DIR, Config
 
-# The browser may only run scripts and styles from this site. No inline code, no outside sites.
+# The browser only runs our own scripts and styles. No inline code, no outside sites.
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; script-src 'self'; style-src 'self'; "
     "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
@@ -25,7 +25,7 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    # Keys are read once at startup and kept in memory. They never go into the database.
+    # Keys are loaded once at startup and kept in memory (never in the database).
     from app.crypto import keys
 
     secrets_dir = app.config["SECRETS_DIR"]
@@ -58,7 +58,7 @@ def create_app(test_config=None):
     def health():
         return jsonify(status="ok")
 
-    # Refuse big JSON bodies early. Image uploads have their own 10 MB limit.
+    # ---- reject oversized JSON early (images are limited separately, to 10 MB)
     @app.before_request
     def limit_json_size():
         if request.mimetype == "application/json":
@@ -66,7 +66,7 @@ def create_app(test_config=None):
             if length is not None and length > app.config["JSON_MAX_BYTES"]:
                 return jsonify(error="Request body too large"), 413
 
-    # Errors: plain JSON for the API, never a stack trace or a framework error page.
+    # ---- errors: plain JSON for the API, never a stack trace or framework page
     @app.errorhandler(413)
     def too_large(_error):
         return jsonify(error="File too large"), 413
@@ -79,7 +79,7 @@ def create_app(test_config=None):
 
     @app.errorhandler(Exception)
     def unexpected_error(error):
-        app.logger.exception("Unhandled error")  # the details stay in the server log
+        app.logger.exception("Unhandled error")  # details stay in the server log only
         if request.path.startswith("/api/"):
             return jsonify(error="Internal server error"), 500
         return "Internal server error", 500
@@ -93,10 +93,10 @@ def create_app(test_config=None):
         response.headers["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=(), payment=()"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-        if request.is_secure:  # HSTS only makes sense over HTTPS
+        if request.is_secure:  # only meaningful (and only sent) over HTTPS
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         if request.path.startswith("/api/"):
-            response.headers.setdefault("Cache-Control", "no-store")  # API data is not cached
+            response.headers.setdefault("Cache-Control", "no-store")  # never cache API data
         return response
 
     return app

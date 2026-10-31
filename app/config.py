@@ -29,9 +29,17 @@ class Config:
     LOGIN_IP_WINDOW_SECONDS = 300
     JSON_MAX_BYTES = 200 * 1024       # biggest JSON body accepted (images have their own 10 MB limit)
 
-    # Account rules
-    MIN_PASSWORD_LEN = 10
+    # Account rules (NIST SP 800-63B: length matters more than character mix)
+    MIN_PASSWORD_LEN = 12
     MAX_PASSWORD_LEN = 128
+
+    # MFA recovery codes
+    RECOVERY_CODE_COUNT = 8
+
+    # Secure share links (one note, one view)
+    SHARE_LINK_MINUTES = 60
+    SHARE_ATTEMPTS_PER_WINDOW = 20    # guesses at a share token per IP per window
+    SHARE_WINDOW_SECONDS = 900
 
     # Vault notes
     NOTE_TITLE_MAX = 200

@@ -1,21 +1,20 @@
-"""TOTP helpers for the authenticator app."""
+"""TOTP (authenticator app) helpers, plus MFA recovery codes.
+
+A recovery code lets someone log in once without their authenticator app
+(phone lost or broken). Each code is used at most once and is stored only as
+a hash, the same way a password reset token is.
+"""
+import hashlib
 import io
+import secrets
 
 import pyotp
 import qrcode
 import qrcode.image.svg
-from flask import current_app
-
-from app.crypto import aes
 
 
 def new_secret():
     return pyotp.random_base32()
-
-
-def secret_aad(user_id):
-    """Binds the stored MFA secret to one user (used when encrypting and decrypting it)."""
-    return f"mfa:{user_id}"
 
 
 def provisioning_uri(secret, username, issuer="SecureVault"):
@@ -29,15 +28,25 @@ def verify_code(secret, code):
     return pyotp.TOTP(secret).verify(code, valid_window=1)
 
 
-def code_matches(user, code):
-    """Check a 6-digit code against the secret stored (encrypted) on the user row."""
-    secret = aes.decrypt_text(current_app.config["AES_KEY"], user["mfa_secret"], secret_aad(user["id"]))
-    return verify_code(secret, code)
-
-
 def qr_svg(data):
-    """QR code for `data` as an SVG string, shown on the MFA setup screen."""
+    """Return a QR code for `data` as an SVG string (shown on the MFA setup screen)."""
     image = qrcode.make(data, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)
     buffer = io.BytesIO()
     image.save(buffer)
     return buffer.getvalue().decode()
+
+
+def generate_recovery_codes(count):
+    """Plaintext codes, shown to the user exactly once. Format: xxxxx-xxxxx."""
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o/1/i/l, so codes are easy to copy by hand
+    codes = []
+    for _ in range(count):
+        half1 = "".join(secrets.choice(alphabet) for _ in range(5))
+        half2 = "".join(secrets.choice(alphabet) for _ in range(5))
+        codes.append(f"{half1}-{half2}")
+    return codes
+
+
+def hash_recovery_code(code):
+    normalized = code.strip().lower()
+    return hashlib.sha256(normalized.encode()).hexdigest()

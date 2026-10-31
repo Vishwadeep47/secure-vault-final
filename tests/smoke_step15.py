@@ -69,7 +69,7 @@ for name in ("alice", "bob", "carol", "dave", "erin"):
     register(name)
 alice_old_session = auth(login("alice"))
 
-# forgot password
+# --- forgot password ----------------------------------------------------------
 r_real = client.post(FORGOT, json={"username": "alice"})
 r_fake = client.post(FORGOT, json={"username": "ghost"})
 check("forgot gives the same answer for real and unknown users",
@@ -82,7 +82,7 @@ stored = db_all("SELECT token_hash FROM password_resets")[0][0]
 dump = "\n".join(sqlite3.connect(DB).iterdump())
 check("only a hash of the token is stored", stored != token1 and token1 not in dump)
 
-# reset: failures first
+# --- reset: failures first ----------------------------------------------------
 check("wrong token rejected",
       client.post(RESET, json={"token": "not-a-real-token", "new_password": NEW}).status_code == 400)
 check("too-short new password rejected",
@@ -91,7 +91,7 @@ check("new password equal to the current one rejected",
       client.post(RESET, json={"token": token1, "new_password": PW}).status_code == 400)
 check("token survives those mistakes (not used up)", db_all("SELECT used FROM password_resets")[0][0] == 0)
 
-# reset: success
+# --- reset: success -------------------------------------------------------------
 r = client.post(RESET, json={"token": token1, "new_password": NEW})
 check("reset with a good token works", r.status_code == 200)
 check("old password no longer works", login("alice", PW).status_code == 401)
@@ -102,7 +102,7 @@ check("new session works", client.get("/api/me", headers=auth(login("alice", NEW
 check("token cannot be used twice",
       client.post(RESET, json={"token": token1, "new_password": "another-long-password"}).status_code == 400)
 
-# expiry
+# --- expiry ---------------------------------------------------------------------
 client.post(FORGOT, json={"username": "alice"})
 token2 = last_token()
 con = sqlite3.connect(DB)
@@ -112,7 +112,7 @@ con.commit()
 check("expired token rejected",
       client.post(RESET, json={"token": token2, "new_password": "another-long-password"}).status_code == 400)
 
-# new request replaces the old token
+# --- new request replaces the old token -------------------------------------------
 client.post(FORGOT, json={"username": "bob"})
 bob_first = last_token()
 client.post(FORGOT, json={"username": "bob"})
@@ -122,7 +122,7 @@ check("an older token stops working when a new one is requested",
 check("the newest token works",
       client.post(RESET, json={"token": bob_second, "new_password": NEW}).status_code == 200)
 
-# rate limits
+# --- rate limits ------------------------------------------------------------------
 client.post(FORGOT, json={"username": "alice"})  # alice's 3rd request in the window
 check("4th reset request for a real user is limited",
       client.post(FORGOT, json={"username": "alice"}).status_code == 429)
@@ -131,7 +131,7 @@ client.post(FORGOT, json={"username": "ghost"})  # ghost's 3rd
 check("unknown users are limited exactly the same way",
       client.post(FORGOT, json={"username": "ghost"}).status_code == 429)
 
-# reset clears a lockout
+# --- reset clears a lockout ---------------------------------------------------------
 for _ in range(5):
     login("carol", "wrong-password-xx")
 check("carol is locked out", login("carol", PW).status_code == 429)
@@ -139,7 +139,7 @@ client.post(FORGOT, json={"username": "carol"})
 client.post(RESET, json={"token": last_token(), "new_password": NEW})
 check("reset lets a locked-out user back in", login("carol", NEW).status_code == 200)
 
-# reset does not bypass MFA
+# --- reset does not bypass MFA ---------------------------------------------------------
 dave_session = auth(login("dave"))
 secret = client.post("/api/mfa/setup", headers=dave_session).json["secret"]
 client.post("/api/mfa/enable", json={"code": pyotp.TOTP(secret).now()}, headers=dave_session)
@@ -150,7 +150,7 @@ check("after reset, login still asks for the MFA code", r.status_code == 401 and
 check("after reset, login works with password + MFA code",
       login("dave", NEW, totp=pyotp.TOTP(secret).now()).status_code == 200)
 
-# change password (logged in)
+# --- change password (logged in) ---------------------------------------------------------
 erin = auth(login("erin"))
 check("change needs login", client.post(CHANGE, json={}).status_code == 401)
 check("change with wrong current password refused",
@@ -173,7 +173,7 @@ check("change works with password + MFA code",
       client.post(CHANGE, json={"current_password": NEW, "new_password": "yet-another-long-pass",
                                 "totp": pyotp.TOTP(secret).now()}, headers=dave2).status_code == 200)
 
-# audit log
+# --- audit log ---------------------------------------------------------------------------
 events = {row[0] for row in db_all("SELECT event FROM audit_log")}
 check("audit log records reset and change events",
       {"reset_requested", "reset_requested_unknown", "password_reset", "password_changed",
@@ -181,7 +181,7 @@ check("audit log records reset and change events",
 audit_text = " ".join(f"{e} {u}" for e, u in db_all("SELECT event, username FROM audit_log"))
 check("audit log contains no tokens", all(t not in audit_text for _, t in issued))
 
-# older databases are upgraded automatically
+# --- older databases are upgraded automatically -----------------------------------------------
 legacy_db = os.path.join(tmp, "legacy.db")
 con = sqlite3.connect(legacy_db)
 con.execute("""CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
@@ -198,8 +198,9 @@ r = lc.post("/api/login", json={"username": "legacy", "password": PW})
 check("database from an earlier step is upgraded and still works",
       r.status_code == 200 and lc.get("/api/me", headers={"Authorization": "Bearer " + r.json["token"]}).status_code == 200)
 
-# limit on guessing reset tokens (per IP)
-ratelimit.clear_all()
+# --- limit on guessing reset tokens (per IP) -----------------------------------------------------
+with app.app_context():
+    ratelimit.clear_all()
 app.config["RESET_ATTEMPTS_PER_WINDOW"] = 3
 codes = [client.post(RESET, json={"token": f"guess-{i}", "new_password": NEW}).status_code for i in range(4)]
 check("guessing reset tokens is limited per IP (3 tries, then 429)", codes == [400, 400, 400, 429])

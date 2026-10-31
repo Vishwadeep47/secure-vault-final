@@ -15,7 +15,7 @@
     return SV.appShell("vault", [tabs, body]);
   };
 
-  /* notes */
+  /* ------------------------------------------------------------------ notes */
   SV.tabs.notes = function (root) {
     let editingId = null;
     const title = field("Title", { type: "text", maxlength: "200", required: true });
@@ -64,14 +64,52 @@
     async function openNote(id) {
       const note = await SV.run(null, null, function () { return api.get("/api/vault/notes/" + id); });
       if (!note) return;
+      const shareSlot = h("div", {});
       detail.replaceChildren(h("div", { class: "card" },
         h("h2", {}, note.title),
         h("p", { class: "muted" }, "Updated " + SV.formatTime(note.updated_at)),
         h("pre", { class: "pre" }, note.content),
         h("div", { class: "row wrap" },
           h("button", { class: "btn small", type: "button", onclick: function () { openForm(note); } }, "Edit"),
+          h("button", { class: "btn small", type: "button", onclick: function () { toggleShare(note.id, shareSlot); } }, "Share"),
           h("button", { class: "btn small danger", type: "button", onclick: function () { remove(note); } }, "Delete"),
-          h("button", { class: "btn small", type: "button", onclick: function () { detail.replaceChildren(); } }, "Close"))));
+          h("button", { class: "btn small", type: "button", onclick: function () { detail.replaceChildren(); } }, "Close")),
+        shareSlot));
+    }
+
+    async function toggleShare(noteId, slot) {
+      if (slot.childNodes.length) { slot.replaceChildren(); return; }
+      const status = await SV.run(null, null, function () { return api.get("/api/vault/notes/" + noteId + "/share"); });
+      if (!status) return;
+      renderShare(noteId, slot, status);
+    }
+
+    function renderShare(noteId, slot, status) {
+      if (!status.active) {
+        slot.replaceChildren(
+          h("p", { class: "muted" }, "No active share link for this note."),
+          h("button", { class: "btn small", type: "button", onclick: async function () {
+            const data = await SV.run(null, null, function () { return api.post("/api/vault/notes/" + noteId + "/share", {}); });
+            if (data) renderShare(noteId, slot, { active: true, expires_at: data.expires_at, freshToken: data.token, minutes: data.minutes });
+          } }, "Create a one-time share link"));
+        return;
+      }
+      const url = window.location.origin + window.location.pathname + "#/shared/" + (status.freshToken || "");
+      const children = [h("p", { class: "muted" }, "Active until " + new Date(status.expires_at * 1000).toLocaleString() + ". Works once; opening it uses it up.")];
+      if (status.freshToken) {
+        children.push(
+          h("p", { class: "mono" }, url),
+          h("button", { class: "btn small", type: "button", onclick: function () {
+            navigator.clipboard.writeText(url).then(function () { SV.toast("Link copied.", "ok"); }).catch(function () {});
+          } }, "Copy link"));
+      } else {
+        children.push(h("p", { class: "muted" }, "The link itself is only shown once, right after you create it."));
+      }
+      children.push(h("button", { class: "btn small danger", type: "button", onclick: async function () {
+        const ok = await SV.run(null, null, async function () { await api.del("/api/vault/notes/" + noteId + "/share"); return true; });
+        if (ok) { SV.toast("Share link revoked.", "ok"); slot.replaceChildren(); }
+      } }, "Revoke"));
+      slot.replaceChildren.apply(slot, children);
     }
 
     async function remove(note) {
@@ -93,7 +131,7 @@
     load();
   };
 
-  /* images */
+  /* ----------------------------------------------------------------- images */
   SV.tabs.images = function (root) {
     let urls = [];
     function revokeAll() { urls.forEach(function (u) { URL.revokeObjectURL(u); }); urls = []; }
@@ -150,7 +188,7 @@
     load();
   };
 
-  /* cards */
+  /* ------------------------------------------------------------------ cards */
   SV.tabs.cards = function (root) {
     const timers = [];
     SV.onLeave(function () { timers.forEach(clearInterval); });
@@ -248,16 +286,34 @@
     function showNumber(d, slot) {
       let seconds = 15;
       const info = h("p", { class: "muted" }, "Hidden again in " + seconds + " s");
+      const clearClipboard = function () {
+        // Best-effort: this can also clobber something unrelated the person
+        // copied in the meantime, which is an acceptable trade for not
+        // leaving a card number sitting in the clipboard indefinitely.
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText("").catch(function () {});
+        }
+      };
       const timer = setInterval(function () {
         seconds -= 1;
-        if (seconds <= 0) { clearInterval(timer); slot.replaceChildren(h("p", { class: "muted" }, "Number hidden again.")); }
-        else info.textContent = "Hidden again in " + seconds + " s";
+        if (seconds <= 0) {
+          clearInterval(timer);
+          clearClipboard();
+          slot.replaceChildren(h("p", { class: "muted" }, "Number hidden again."));
+        } else info.textContent = "Hidden again in " + seconds + " s";
       }, 1000);
       timers.push(timer);
+      const plain = String(d.card_number).replace(/(.{4})(?=.)/g, "$1 ");
       slot.replaceChildren(
-        h("p", { class: "mono big" }, String(d.card_number).replace(/(.{4})(?=.)/g, "$1 ")),
+        h("p", { class: "mono big" }, plain),
         info,
-        h("button", { class: "btn small", type: "button", onclick: function () { clearInterval(timer); slot.replaceChildren(); } }, "Hide now"));
+        h("div", { class: "row" },
+          h("button", { class: "btn small", type: "button", onclick: function () {
+            navigator.clipboard.writeText(d.card_number).then(function () {
+              SV.toast("Copied. It will be cleared from your clipboard when the number hides.", "ok");
+            }).catch(function () {});
+          } }, "Copy number"),
+          h("button", { class: "btn small", type: "button", onclick: function () { clearInterval(timer); clearClipboard(); slot.replaceChildren(); } }, "Hide now")));
     }
 
     async function remove(c) {

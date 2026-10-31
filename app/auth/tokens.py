@@ -9,7 +9,7 @@ def create_token(user_id, role, secret, minutes, version=0):
     payload = {
         "sub": str(user_id),
         "role": role,
-        "ver": version,  # compared with users.token_version on every request
+        "ver": version,  # bumped on password change, which ends all older sessions
         "iat": now,
         "exp": now + timedelta(minutes=minutes),
     }
@@ -17,5 +17,5 @@ def create_token(user_id, role, secret, minutes, version=0):
 
 
 def decode_token(token, secret):
-    """Raises jwt.PyJWTError if the token is invalid, forged or expired."""
+    """Raises jwt.PyJWTError if the token is invalid, forged, or expired."""
     return jwt.decode(token, secret, algorithms=["HS256"])

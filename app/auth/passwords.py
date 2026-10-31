@@ -4,8 +4,8 @@ from argon2.exceptions import InvalidHashError, VerificationError
 
 _hasher = PasswordHasher()
 
-# For an unknown username we still verify against this, so the response time
-# does not show which usernames exist.
+# Verified against when the username does not exist, so response time does not
+# reveal which usernames are real.
 _DUMMY_HASH = _hasher.hash("dummy-password-for-timing")
 
 
@@ -14,7 +14,7 @@ def hash_password(password):
 
 
 def verify_password(stored_hash, password):
-    """True only if stored_hash exists and matches. Does the same work either way."""
+    """Return True only if stored_hash exists and matches. Always does real work."""
     try:
         _hasher.verify(stored_hash or _DUMMY_HASH, password)
         return stored_hash is not None

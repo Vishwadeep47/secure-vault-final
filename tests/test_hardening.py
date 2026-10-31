@@ -21,7 +21,7 @@ from tests.test_threat_model import audit_events, login
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 
 
-# H1 sign-up flooding
+# ------------------------------------------------------------ H1 sign-up flooding
 def test_H1_signups_are_limited_per_address(app, client):
     app.config["REGISTER_PER_WINDOW"] = 3
     codes = [client.post("/api/register", json={"username": f"user{i}", "password": PASSWORD}).status_code for i in range(5)]
@@ -36,10 +36,11 @@ def test_H1_invalid_signup_attempts_count_too(app, client):
     assert client.post("/api/register", json={"username": "okname", "password": PASSWORD}).status_code == 429
 
 
-# H2 one address trying many usernames
+# ----------------------------------------------- H2 one address trying many usernames
 def test_H2_logins_are_limited_per_address_across_all_usernames(app, client, alice):
     app.config["LOGIN_PER_IP"] = 5
-    ratelimit.clear_all()
+    with app.app_context():
+        ratelimit.clear_all()
     codes = [login(client, f"guess{i}", "wrong-password-xx").status_code for i in range(7)]
     assert codes == [401] * 5 + [429] * 2
     assert "login_ip_limited" in audit_events(app)
@@ -47,36 +48,62 @@ def test_H2_logins_are_limited_per_address_across_all_usernames(app, client, ali
 
 def test_H2_the_address_limit_also_blocks_the_right_password(app, client, alice):
     app.config["LOGIN_PER_IP"] = 3
-    ratelimit.clear_all()
+    with app.app_context():
+        ratelimit.clear_all()
     for i in range(3):
         login(client, f"guess{i}", "wrong-password-xx")
     assert login(client, "alice", PASSWORD).status_code == 429
 
 
-# H3 memory cannot be flooded
-def test_H3_failed_login_tracking_stays_bounded(monkeypatch):
-    monkeypatch.setattr(ratelimit, "MAX_TRACKED", 100)
-    for i in range(1000):
-        ratelimit.register_failure(f"random-name-{i}")
-    assert len(ratelimit._failures) <= 100
+# H3 limits are kept in the database, not in memory, so they are not lost on restart
+def test_H3_lockout_survives_a_restart(tmp_path):
+    """The point of moving this to the database: a second app object (standing in
+    for the process restarting) still sees the lockout the first one recorded."""
+    from app import create_app
+
+    db_path = str(tmp_path / "shared.db")
+    secrets_dir = str(tmp_path / "secrets")
+    app1 = create_app({"DB_PATH": db_path, "SECRETS_DIR": secrets_dir})
+    client1 = app1.test_client()
+    client1.post("/api/register", json={"username": "restartme", "password": PASSWORD})
+    for _ in range(5):
+        login(client1, "restartme", "wrong-password")
+
+    app2 = create_app({"DB_PATH": db_path, "SECRETS_DIR": secrets_dir})  # a fresh process would do this
+    client2 = app2.test_client()
+    assert login(client2, "restartme", PASSWORD).status_code == 429
 
 
-def test_H3_request_counters_stay_bounded(monkeypatch):
-    monkeypatch.setattr(ratelimit, "MAX_TRACKED", 100)
-    for i in range(1000):
-        ratelimit.too_many_requests(f"key-{i}", 5, 60)
-    assert len(ratelimit._hits) <= 100
+def test_H3_old_login_failure_rows_are_forgotten(app, monkeypatch):
+    monkeypatch.setattr(ratelimit, "MAX_AGE_SECONDS", 1)
+    with app.app_context():
+        conn = db(app)
+        conn.execute(
+            "INSERT INTO login_failures (username, count, first_failure_at) VALUES (?, 1, ?)",
+            ("ancient-name", time.time() - 10),
+        )
+        conn.commit()
+        conn.close()
+        ratelimit.register_failure("someone-new")  # cleanup runs as a side effect of normal use
+        conn = db(app)
+        row = conn.execute("SELECT 1 FROM login_failures WHERE username = ?", ("ancient-name",)).fetchone()
+    assert row is None
 
 
-def test_H3_trimming_drops_the_oldest_entries_first(monkeypatch):
-    monkeypatch.setattr(ratelimit, "MAX_TRACKED", 10)
-    for i in range(30):
-        ratelimit.register_failure(f"name-{i}")
-        time.sleep(0.001)
-    assert "name-29" in ratelimit._failures and "name-0" not in ratelimit._failures
+def test_H3_old_rate_hit_rows_are_forgotten(app, monkeypatch):
+    monkeypatch.setattr(ratelimit, "MAX_AGE_SECONDS", 1)
+    with app.app_context():
+        conn = db(app)
+        conn.execute("INSERT INTO rate_hits (rkey, ts) VALUES (?, ?)", ("ancient-key", time.time() - 10))
+        conn.commit()
+        conn.close()
+        ratelimit.too_many_requests("someone-new", 1000, 60)
+        conn = db(app)
+        row = conn.execute("SELECT 1 FROM rate_hits WHERE rkey = ?", ("ancient-key",)).fetchone()
+    assert row is None
 
 
-# H4 body size limits
+# ----------------------------------------------------------- H4 body size limits
 def test_H4_huge_json_bodies_are_refused_early(client, alice):
     huge = {"title": "t", "content": "a" * 300_000}
     r = client.post("/api/vault/notes", json=huge, headers=alice)
@@ -93,7 +120,7 @@ def test_H4_the_largest_allowed_note_still_works(client, alice):
     assert r.status_code == 201
 
 
-# H5 safe error pages
+# ----------------------------------------------------------- H5 safe error pages
 def test_H5_unknown_api_address_gives_plain_json(client):
     r = client.get("/api/does-not-exist")
     assert r.status_code == 404 and r.json == {"error": "Not Found"}
@@ -122,7 +149,7 @@ def test_H5_malformed_json_is_a_clean_400(client, alice):
     assert r.status_code == 400 and "Traceback" not in r.get_data(as_text=True)
 
 
-# H6 headers and cross-site use
+# ------------------------------------------------------ H6 headers and cross-site use
 def test_H6_extra_browser_protections_are_set(client):
     h = client.get("/").headers
     assert "camera=(self)" in h["Permissions-Policy"] and "microphone=()" in h["Permissions-Policy"]
@@ -143,7 +170,7 @@ def test_H6_other_websites_are_not_allowed_to_call_the_api(client, alice):
     assert "Access-Control-Allow-Origin" not in preflight.headers
 
 
-# H7 production server (Waitress)
+# ------------------------------------------------------ H7 production server (Waitress)
 def _free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -188,7 +215,7 @@ def test_H7_waitress_refuses_oversized_requests(live_server):
         urllib.request.urlopen(request, timeout=20)
 
 
-# H8 Git history scanner
+# ------------------------------------------------------ H8 Git history scanner
 git_missing = shutil.which("git") is None
 
 
@@ -273,7 +300,7 @@ def test_H8_scanner_says_nothing_to_scan_outside_git(tmp_path):
     assert scan_git_history.scan(str(tmp_path)) is None
 
 
-# H9 the whole checklist
+# ------------------------------------------------------ H9 the whole checklist
 def test_H9_hardening_checklist_has_no_failures(monkeypatch):
     from app.auth import passwords
     from scripts import hardening_check

@@ -14,9 +14,20 @@
     const stats = h("div", {});
     const users = h("div", {});
     const logs = h("div", {});
+    const chainStatus = h("span", { class: "muted" });
+    const verifyBtn = h("button", { class: "btn small", type: "button", onclick: async function () {
+      chainStatus.textContent = "Checking...";
+      const r = await SV.run(null, null, function () { return api.get("/api/admin/logs/verify"); });
+      if (!r) { chainStatus.textContent = ""; return; }
+      chainStatus.replaceChildren(r.ok
+        ? h("span", { class: "pill ok" }, "Chain intact (" + r.checked + " entries)")
+        : h("span", { class: "pill danger" }, "Tampering detected at entry #" + r.broken_at));
+    } }, "Verify audit log integrity");
+
     const root = h("div", {}, h("h2", {}, "Admin"),
       stats, h("section", { class: "block" }, h("h2", {}, "Users"), users),
-      h("section", { class: "block" }, h("h2", {}, "Audit log"), logs));
+      h("section", { class: "block" }, h("h2", {}, "Audit log"),
+        h("div", { class: "row" }, verifyBtn, chainStatus), logs));
 
     (async function loadStats() {
       const s = await SV.run(null, null, function () { return api.get("/api/admin/stats"); });
@@ -31,14 +42,35 @@
           : "No activity in the last 24 hours."));
     })();
 
-    (async function loadUsers() {
+    async function loadUsers() {
       const d = await SV.run(null, null, function () { return api.get("/api/admin/users"); });
       if (!d) return;
-      users.replaceChildren(table(["Username", "Role", "MFA", "Notes", "Images", "Cards", "Joined"],
-        d.users.map(function (u) {
-          return [u.username, u.role, u.mfa_enabled ? "on" : "off", u.notes_count, u.images_count, u.cards_count, SV.formatTime(u.created_at)];
-        })));
-    })();
+      const me = (SV.session.get() || {}).username;
+      users.replaceChildren(h("div", { class: "table-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Username", "Role", "MFA", "Status", "Notes", "Images", "Cards", "Joined", ""].map(function (t) { return h("th", {}, t); }))),
+        h("tbody", {}, d.users.map(function (u) {
+          const actions = h("div", { class: "row" });
+          if (u.username !== me) {
+            actions.append(
+              u.disabled
+                ? h("button", { class: "btn small", type: "button", onclick: function () { userAction(u.id, "enable"); } }, "Enable")
+                : h("button", { class: "btn small danger", type: "button", onclick: function () { userAction(u.id, "disable"); } }, "Disable"));
+          }
+          actions.append(h("button", { class: "btn small", type: "button", onclick: function () { userAction(u.id, "unlock"); } }, "Unlock"));
+          return h("tr", {},
+            h("td", {}, u.username), h("td", {}, u.role), h("td", {}, u.mfa_enabled ? "on" : "off"),
+            h("td", {}, u.disabled ? h("span", { class: "pill" }, "Disabled") : h("span", { class: "pill ok" }, "Active")),
+            h("td", {}, u.notes_count), h("td", {}, u.images_count), h("td", {}, u.cards_count),
+            h("td", {}, SV.formatTime(u.created_at)), h("td", {}, actions));
+        })))));
+    }
+
+    async function userAction(userId, action) {
+      const data = await SV.run(null, null, function () { return api.post("/api/admin/users/" + userId + "/" + action, {}); });
+      if (data) { SV.toast(data.message, "ok"); loadUsers(); }
+    }
+
+    loadUsers();
 
     const state = { offset: 0, limit: 20, event: "", username: "" };
     const eventInput = field("Event", { type: "text", placeholder: "e.g. login_failed", autocomplete: "off" });

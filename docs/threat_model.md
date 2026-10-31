@@ -25,6 +25,13 @@ Method: STRIDE-style review. Each threat lists the attack, the defence built, an
 | T16 | Information leakage | Stack traces, server banner, cached images | Generic errors, server name hidden, `no-store` on images | T16 |
 | T17 | Secrets in Git | Keys or data committed by mistake | `.gitignore`, history scanner, checklist script | T17, H9 |
 | H1-H8 | Abuse and resource exhaustion | Mass sign-ups, huge JSON, memory growth | Sign-up and login limits, 200 KB body cap, bounded trackers, security headers | H1-H8 |
+| T18 | Weak or reused password | "password123" at the length minimum | Common-password blocklist on top of the length rule, checked on sign-up, change, and reset | test_password_policy.py |
+| T19 | Lost authenticator device locks the account out | Phone lost, no way to produce a TOTP code | Single-use recovery codes, issued once, replaceable (invalidating the old set) with the current password | test_recovery_codes.py |
+| T20 | Disabled or locked account still usable | A banned user keeps using an open session | `disabled` ends login AND bumps `token_version` (kills open sessions immediately); checked again in `require_auth` as defense in depth | test_admin_user_management.py |
+| T21 | Silent tampering with the audit trail | Edit or delete a row to hide an attack | Each row's hash covers its own fields plus the row before it; one admin call recomputes the whole chain and names the first broken row | test_audit_chain.py |
+| T22 | One compromised key exposes every account's data | Master key leaks | Each account's vault data is under its own key (wrapped by the master key); a rotation is per-account, not all-or-nothing | test_user_keys.py |
+| T23 | Guessing a note's share token | Try tokens at random against the public share endpoint | 256-bit random token, stored only as a hash, rate limited per IP, single use, expires | test_share_links.py |
+| T24 | Session left open on a shared machine | Forgetting to log out on a public computer | Idle auto-logout after 5 minutes of no activity, on top of the 15-minute token lifetime | frontend, static/js/main.js |
 
 ## Out of scope / accepted risks
 
@@ -32,4 +39,6 @@ Method: STRIDE-style review. Each threat lists the attack, the defence built, an
 - Physical access to the server and its `.secrets/` folder.
 - Denial of service at network level.
 - Traffic is plain HTTP on localhost for the demo; real use needs HTTPS (HSTS is already sent when HTTPS is used).
-- Rate-limit counters reset on restart.
+- Rotating a per-user data key does not re-encrypt existing notes/images/cards; only new writes use the new key version. Old data keeps decrypting fine under the version it was written with, but a full re-encryption pass is not built.
+- The audit hash chain detects tampering; it does not stop an attacker with direct database write access from truncating the table entirely and starting a new chain from scratch (there is nothing outside the database itself to compare against).
+- Face login is not built (see T11).

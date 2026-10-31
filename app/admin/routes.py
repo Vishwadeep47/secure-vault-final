@@ -1,17 +1,20 @@
-"""Admin routes: audit log, user list and summary numbers.
+"""Admin-only routes: audit log viewer, user list, summary numbers.
 
-Each route needs a valid token and the 'admin' role, which is checked in the database
-on every request. A normal user gets 403 and the attempt is logged.
+Every route needs a valid token AND the 'admin' role (checked against the
+database on each request). A normal user gets 403 and the attempt is logged.
 
-Admins cannot see password hashes, MFA secrets, notes, images or card data.
-The user list only shows how many items each user has.
+What admins can NOT see: password hashes, MFA secrets, note text, images, or
+card data. The user list only shows counts of stored items.
 """
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from app.auth.decorators import require_auth
 from app.db import get_db
+from app.pagination import int_arg
+from app.security import ratelimit
+from app.security.audit import log_event, verify_chain
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -19,34 +22,18 @@ MAX_PAGE_SIZE = 200
 DEFAULT_PAGE_SIZE = 50
 
 
-def _int_arg(name, default, minimum, maximum=None):
-    """Read an integer from the query string. Returns (value, error_message)."""
-    raw = request.args.get(name)
-    if raw is None or raw == "":
-        return default, None
-    try:
-        value = int(raw)
-    except ValueError:
-        return None, f"{name} must be a whole number"
-    if value < minimum:
-        return None, f"{name} must be at least {minimum}"
-    if maximum is not None:
-        value = min(value, maximum)  # too-large values are capped, not rejected
-    return value, None
-
-
 @admin_bp.get("/logs")
 @require_auth(role="admin")
 def audit_logs():
-    """Newest first. Filters: ?event=login_failed&username=bob&limit=50&offset=0"""
-    limit, error = _int_arg("limit", DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
+    """Newest first. Optional filters: ?event=login_failed&username=bob&limit=50&offset=0"""
+    limit, error = int_arg("limit", DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
     if error:
         return jsonify(error=error), 400
-    offset, error = _int_arg("offset", 0, 0)
+    offset, error = int_arg("offset", 0, 0)
     if error:
         return jsonify(error=error), 400
 
-    # Only fixed pieces of SQL are joined here. Every value goes in as a parameter.
+    # Only fixed SQL fragments are joined; every value goes in as a parameter.
     where, params = [], []
     event = request.args.get("event", "").strip()
     if event:
@@ -68,12 +55,21 @@ def audit_logs():
     return jsonify(logs=[dict(r) for r in rows], total=total, limit=limit, offset=offset)
 
 
+@admin_bp.get("/logs/verify")
+@require_auth(role="admin")
+def audit_logs_verify():
+    """Checks the audit log's hash chain for signs of tampering (an edited,
+    deleted, or inserted-out-of-order row). See app/security/audit.py."""
+    result = verify_chain(get_db())
+    return jsonify(**result)
+
+
 @admin_bp.get("/users")
 @require_auth(role="admin")
 def list_users():
     rows = get_db().execute(
         """
-        SELECT u.id, u.username, u.role, u.mfa_enabled, u.created_at,
+        SELECT u.id, u.username, u.role, u.mfa_enabled, u.disabled, u.created_at,
                (SELECT COUNT(*) FROM notes  n WHERE n.user_id = u.id) AS notes_count,
                (SELECT COUNT(*) FROM images i WHERE i.user_id = u.id) AS images_count,
                (SELECT COUNT(*) FROM cards  c WHERE c.user_id = u.id) AS cards_count
@@ -85,8 +81,60 @@ def list_users():
     for row in rows:
         user = dict(row)
         user["mfa_enabled"] = bool(user["mfa_enabled"])
+        user["disabled"] = bool(user["disabled"])
         users.append(user)
     return jsonify(users=users)
+
+
+def _target_user(user_id):
+    return get_db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+@admin_bp.post("/users/<int:user_id>/disable")
+@require_auth(role="admin")
+def disable_user(user_id):
+    """Blocks all login and ends any session already open, right away."""
+    if user_id == g.user["id"]:
+        return jsonify(error="You cannot disable your own account"), 400
+
+    target = _target_user(user_id)
+    if target is None:
+        return jsonify(error="User not found"), 404
+
+    db = get_db()
+    db.execute(
+        "UPDATE users SET disabled = 1, token_version = token_version + 1 WHERE id = ?", (user_id,)
+    )
+    db.commit()
+    log_event("admin_disabled_user", target["username"])
+    return jsonify(message=f"{target['username']} is disabled")
+
+
+@admin_bp.post("/users/<int:user_id>/enable")
+@require_auth(role="admin")
+def enable_user(user_id):
+    target = _target_user(user_id)
+    if target is None:
+        return jsonify(error="User not found"), 404
+
+    db = get_db()
+    db.execute("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,))
+    db.commit()
+    log_event("admin_enabled_user", target["username"])
+    return jsonify(message=f"{target['username']} is enabled")
+
+
+@admin_bp.post("/users/<int:user_id>/unlock")
+@require_auth(role="admin")
+def unlock_user(user_id):
+    """Clears a login lockout without touching the password or disabling anything."""
+    target = _target_user(user_id)
+    if target is None:
+        return jsonify(error="User not found"), 404
+
+    ratelimit.clear_failures(target["username"])
+    log_event("admin_unlocked_user", target["username"])
+    return jsonify(message=f"{target['username']} is unlocked")
 
 
 @admin_bp.get("/stats")

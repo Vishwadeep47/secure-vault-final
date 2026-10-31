@@ -76,6 +76,34 @@
     return (n / (1024 * 1024)).toFixed(1) + " MB";
   };
 
+  /* A password strength hint. Purely a UI nudge — the real check is on the
+     server (app/security/password_policy.py) and is the one that is enforced.
+     Score is 0-4: mostly about length, since that is what actually matters. */
+  SV.strengthMeter = function (input) {
+    const bar = h("div", { class: "strength-bar" }, h("i", {}));
+    const label = h("span", { class: "strength-label" });
+    const fill = bar.firstChild;
+
+    function score(pw) {
+      if (!pw) return 0;
+      let s = 0;
+      if (pw.length >= 12) s++;
+      if (pw.length >= 16) s++;
+      if (pw.length >= 24) s++;
+      const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/].filter(function (re) { return re.test(pw); }).length;
+      if (classes >= 3) s++;
+      return Math.min(s, 4);
+    }
+
+    const levels = ["Too short", "Weak", "Okay", "Good", "Strong"];
+    input.addEventListener("input", function () {
+      const s = score(input.value);
+      fill.className = "s" + s; // width per level is set in CSS, not here (keeps the strict style-src CSP happy)
+      label.textContent = input.value ? levels[s] : "";
+    });
+    return h("div", { class: "strength" }, bar, label);
+  };
+
   /* Things to tidy up when the user leaves a screen (timers, picture URLs). */
   const cleanups = [];
   SV.onLeave = function (fn) { cleanups.push(fn); };
@@ -100,10 +128,10 @@
         links.map(function (l) { return h("a", { href: l[2], class: l[0] === active ? "active" : "" }, l[1]); })));
   };
 
-  SV.logout = async function () {
+  SV.logout = async function (reason) {
     try { await SV.api.post("/api/logout", {}, { keepSession: true }); } catch (e) { /* already ended */ }
     SV.session.clear();
-    SV.toast("You are logged out.");
+    SV.toast(reason || "You are logged out.");
     SV.navigate("#/login");
   };
 })();

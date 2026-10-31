@@ -1,4 +1,4 @@
-"""@require_auth: the request must carry a valid token, and optionally the right role."""
+"""Route protection: valid JWT required, optional role check."""
 from functools import wraps
 
 import jwt
@@ -27,11 +27,17 @@ def require_auth(role=None):
             if user is None:
                 return jsonify(error="User not found"), 401
 
-            # Logout and password change/reset raise token_version, which kills older tokens.
+            # Defense in depth: disabling a user also bumps token_version (which
+            # ends the check below), but this catches it even if that ever changes.
+            if user["disabled"]:
+                return jsonify(error="This account has been disabled."), 401
+
+            # A password change/reset bumps token_version, which ends older sessions.
             if claims.get("ver", 0) != user["token_version"]:
                 return jsonify(error="Session expired, please log in again"), 401
 
-            # The role is read from the database, not the token, so a role change applies at once.
+            # Role comes from the database, not from the token, so a role change
+            # takes effect immediately.
             if role and user["role"] != role:
                 log_event("forbidden_access", user["username"])
                 return jsonify(error="Forbidden"), 403

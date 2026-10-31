@@ -23,12 +23,35 @@
 
   SV.views.login = function () {
     let needCode = false;
+    let useRecovery = false;
     const user = field("Username", { type: "text", autocomplete: "username", autocapitalize: "none", required: true });
     const pass = field("Password", { type: "password", autocomplete: "current-password", required: true });
     const code = field("Authenticator code", { type: "text", inputmode: "numeric", autocomplete: "one-time-code", maxlength: "6" });
     code.wrap.hidden = true;
+    const recoveryLink = h("a", { href: "#" }, "Use a recovery code instead");
+    recoveryLink.hidden = true;
     const msg = SV.msgBox();
     const btn = h("button", { class: "btn primary block", type: "submit" }, "Log in");
+
+    recoveryLink.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      useRecovery = !useRecovery;
+      if (useRecovery) {
+        code.input.setAttribute("autocomplete", "off");
+        code.input.removeAttribute("inputmode");
+        code.input.removeAttribute("maxlength");
+        code.wrap.querySelector("label").textContent = "Recovery code";
+        recoveryLink.textContent = "Use my authenticator app instead";
+      } else {
+        code.input.setAttribute("autocomplete", "one-time-code");
+        code.input.setAttribute("inputmode", "numeric");
+        code.input.setAttribute("maxlength", "6");
+        code.wrap.querySelector("label").textContent = "Authenticator code";
+        recoveryLink.textContent = "Use a recovery code instead";
+      }
+      code.input.value = "";
+      code.input.focus();
+    });
 
     const form = h("form", {
       onsubmit: async function (ev) {
@@ -37,7 +60,10 @@
         btn.disabled = true;
         try {
           const body = { username: user.input.value.trim(), password: pass.input.value };
-          if (needCode) body.totp = code.input.value.trim();
+          if (needCode) {
+            if (useRecovery) body.recovery_code = code.input.value.trim();
+            else body.totp = code.input.value.trim();
+          }
           const data = await api.post("/api/login", body, { auth: false });
           await SV.completeLogin(data, body.username);
         } catch (e) {
@@ -45,6 +71,7 @@
             needCode = true;
             code.wrap.hidden = false;
             code.input.required = true;
+            recoveryLink.hidden = false;
             code.input.focus();
             SV.showMsg(msg, "Enter the 6-digit code from your authenticator app.", "info");
           } else {
@@ -54,7 +81,7 @@
           btn.disabled = false;
         }
       },
-    }, user.wrap, pass.wrap, code.wrap, msg, btn);
+    }, user.wrap, pass.wrap, code.wrap, h("p", { class: "muted" }, recoveryLink), msg, btn);
 
     return authShell("Log in", "Welcome back.", [
       form,
@@ -66,7 +93,7 @@
 
   SV.views.register = function () {
     const user = field("Username", { type: "text", autocomplete: "username", autocapitalize: "none", required: true, minlength: "3", maxlength: "32", pattern: "[a-z0-9_]+" });
-    const pass = field("Password", { type: "password", autocomplete: "new-password", required: true, minlength: "10", maxlength: "128" });
+    const pass = field("Password", { type: "password", autocomplete: "new-password", required: true, minlength: "12", maxlength: "128" });
     const again = field("Repeat password", { type: "password", autocomplete: "new-password", required: true });
     const msg = SV.msgBox();
     const btn = h("button", { class: "btn primary block", type: "submit" }, "Create account");
@@ -88,10 +115,25 @@
         }
       },
     }, user.wrap, h("p", { class: "muted" }, "Lowercase letters, numbers and underscore, 3 to 32 characters."),
-      pass.wrap, h("p", { class: "muted" }, "At least 10 characters. A long phrase works well."),
+      pass.wrap, SV.strengthMeter(pass.input), h("p", { class: "muted" }, "At least 12 characters. A long phrase works well. Common passwords are rejected."),
       again.wrap, msg, btn);
 
     return authShell("Create account", null, [form, h("div", { class: "links" }, h("a", { href: "#/login" }, "I already have an account"))]);
+  };
+
+  /* A note someone shared, opened with no login. The token is used up the
+     moment the server answers, whether or not this page shows it. */
+  SV.views.shared = function (token) {
+    const body = h("div", {}, h("p", { class: "muted" }, "Loading..."));
+    api.get("/api/vault/notes/share/" + token, { auth: false }).then(function (note) {
+      body.replaceChildren(
+        h("h1", {}, note.title),
+        h("pre", { class: "pre" }, note.content),
+        h("p", { class: "muted" }, "This link has now been used and will not open again."));
+    }).catch(function (e) {
+      body.replaceChildren(h("p", { class: "msg error" }, e.message || "This share link is invalid, used, or has expired."));
+    });
+    return authShell("Shared note", null, [body, h("div", { class: "links" }, h("a", { href: "#/login" }, "Go to SecureVault"))]);
   };
 
   SV.views.forgot = function () {
@@ -101,7 +143,7 @@
     const step2 = h("div", { hidden: true });
 
     const token = field("Reset token", { type: "text", autocomplete: "off", required: true });
-    const pass = field("New password", { type: "password", autocomplete: "new-password", required: true, minlength: "10", maxlength: "128" });
+    const pass = field("New password", { type: "password", autocomplete: "new-password", required: true, minlength: "12", maxlength: "128" });
     const msg2 = SV.msgBox();
     const btn2 = h("button", { class: "btn primary block", type: "submit" }, "Set new password");
 
@@ -130,7 +172,7 @@
           SV.navigate("#/login");
         }
       },
-    }, token.wrap, pass.wrap, msg2, btn2);
+    }, token.wrap, pass.wrap, SV.strengthMeter(pass.input), msg2, btn2);
 
     step2.append(
       h("h2", {}, "Step 2: use your token"),
