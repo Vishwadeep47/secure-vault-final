@@ -7,7 +7,7 @@
   function authShell(title, subtitle, children) {
     return h("main", { class: "auth" },
       h("div", { class: "auth-card" },
-        h("div", { class: "brand" }, "SecureVault"),
+        h("div", { class: "brand" }, h("span", { class: "mark" }, h("span"), h("span"), h("span")), "SecureVault"),
         h("h1", {}, title),
         subtitle ? h("p", { class: "muted" }, subtitle) : null,
         children));

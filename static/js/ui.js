@@ -120,7 +120,7 @@
     if (s.role === "admin") links.push(["admin", "Admin", "#/admin"]);
     return h("div", { class: "shell" },
       h("header", { class: "topbar" },
-        h("span", { class: "brand" }, "SecureVault"),
+        h("span", { class: "brand" }, h("span", { class: "mark" }, h("span"), h("span"), h("span")), "SecureVault"),
         h("span", { class: "who" }, (s.username || "") + (s.role === "admin" ? " (admin)" : "")),
         h("button", { class: "btn small", type: "button", onclick: function () { SV.logout(); } }, "Log out")),
       h("main", { class: "container" }, content),
