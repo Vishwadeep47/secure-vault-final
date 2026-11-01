@@ -5,13 +5,14 @@
 | Password hashing (Argon2), lockout | Done |
 | TOTP multi-factor authentication | Done |
 | JWT sessions with revocation | Done |
-| Encrypted notes | Done |
 | Encrypted image vault | Done |
 | Encrypted card vault (test cards only) | Done |
+| Offline encryption FAQ chat | Done |
+| User-to-user encrypted messaging (AES-256-GCM) | Done |
 | Admin logs, users, statistics | Done |
 | Password reset and change | Done (token printed to console, no email) |
 | Frontend | Done |
-| Security tests | 119 passed, 1 skipped |
+| Security tests | 187 passed, 2 skipped |
 | Hardening | Done, see `docs/hardening.md` |
 | Face authentication | **Not built**: design and setup script only |
 
