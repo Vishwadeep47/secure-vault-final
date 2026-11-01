@@ -1,13 +1,13 @@
 """Per-user data encryption keys.
 
-Every user gets their own random 256-bit key for their notes, images, and
-cards, instead of everyone sharing the single server master key. The user's
+Every user gets their own random 256-bit key for their images and cards,
+instead of everyone sharing the single server master key. The user's
 key is "wrapped" (encrypted) by the server master key and stored in the
 `user_keys` table; the master key never touches vault data directly once a
 user has their own key.
 
 Versions, not replacement: rotating a key adds version N+1 instead of
-overwriting version N. Each note/image/card row remembers which version
+overwriting version N. Each image/card row remembers which version
 encrypted it (its `key_version` column), so old records stay readable under
 their original key after a rotation - this project does not re-encrypt
 existing data when a key is rotated; only new writes use the new version.

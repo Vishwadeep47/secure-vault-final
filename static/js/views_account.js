@@ -51,7 +51,7 @@
       } }, "Rotate my encryption key");
       return h("div", { class: "card" },
         h("h2", {}, "Data encryption key"),
-        h("p", { class: "muted" }, "Your notes, images, and cards are encrypted with a key that is yours alone, separate from other accounts. Rotating it issues a new one for anything you add from now on; items you already saved keep working normally."),
+        h("p", { class: "muted" }, "Your images and cards are encrypted with a key that is yours alone, separate from other accounts. Rotating it issues a new one for anything you add from now on; items you already saved keep working normally."),
         rotateBtn, form, msg);
     }
 

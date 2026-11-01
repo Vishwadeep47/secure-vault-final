@@ -17,17 +17,6 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    content_enc TEXT NOT NULL,
-    key_version INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
 CREATE TABLE IF NOT EXISTS images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -97,19 +86,6 @@ CREATE TABLE IF NOT EXISTS recovery_codes (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- One-time, expiring links that let someone view a single note without logging in.
-CREATE TABLE IF NOT EXISTS share_links (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    note_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
-    token_hash TEXT NOT NULL UNIQUE,
-    expires_at INTEGER NOT NULL,
-    used INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (note_id) REFERENCES notes(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
 -- Login lockouts and request counters, kept in the database so a server
 -- restart cannot reset an attack that is in progress.
 CREATE TABLE IF NOT EXISTS login_failures (
@@ -151,7 +127,6 @@ def _migrate(db):
     _add_column_if_missing(db, "users", "token_version", "token_version INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(db, "users", "disabled", "disabled INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(db, "users", "key_version", "key_version INTEGER NOT NULL DEFAULT 0")
-    _add_column_if_missing(db, "notes", "key_version", "key_version INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(db, "images", "key_version", "key_version INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(db, "cards", "key_version", "key_version INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(db, "audit_log", "prev_hash", "prev_hash TEXT")

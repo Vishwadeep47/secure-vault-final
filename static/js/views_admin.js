@@ -36,7 +36,7 @@
       const events = Object.keys(s.events_last_24h);
       stats.replaceChildren(
         h("div", { class: "stats" }, tile("Users", s.users), tile("Admins", s.admins), tile("With MFA", s.mfa_enabled_users),
-          tile("Notes", s.notes), tile("Images", s.images), tile("Cards", s.cards)),
+          tile("Images", s.images), tile("Cards", s.cards)),
         h("p", { class: "muted" }, events.length
           ? "Last 24 hours: " + events.map(function (e) { return e + " " + s.events_last_24h[e]; }).join(", ")
           : "No activity in the last 24 hours."));
@@ -47,7 +47,7 @@
       if (!d) return;
       const me = (SV.session.get() || {}).username;
       users.replaceChildren(h("div", { class: "table-wrap" }, h("table", {},
-        h("thead", {}, h("tr", {}, ["Username", "Role", "MFA", "Status", "Notes", "Images", "Cards", "Joined", ""].map(function (t) { return h("th", {}, t); }))),
+        h("thead", {}, h("tr", {}, ["Username", "Role", "MFA", "Status", "Images", "Cards", "Joined", ""].map(function (t) { return h("th", {}, t); }))),
         h("tbody", {}, d.users.map(function (u) {
           const actions = h("div", { class: "row" });
           if (u.username !== me) {
@@ -60,7 +60,7 @@
           return h("tr", {},
             h("td", {}, u.username), h("td", {}, u.role), h("td", {}, u.mfa_enabled ? "on" : "off"),
             h("td", {}, u.disabled ? h("span", { class: "pill" }, "Disabled") : h("span", { class: "pill ok" }, "Active")),
-            h("td", {}, u.notes_count), h("td", {}, u.images_count), h("td", {}, u.cards_count),
+            h("td", {}, u.images_count), h("td", {}, u.cards_count),
             h("td", {}, SV.formatTime(u.created_at)), h("td", {}, actions));
         })))));
     }

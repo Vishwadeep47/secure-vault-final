@@ -45,7 +45,7 @@ trust its forwarded headers first; see the Waitress documentation for `trusted_p
   still exposes everyone's data (just not everyone's data under the *same* key as before).
   Keys derived from each user's own password would stop even the server operator from
   reading data, but then a password reset would need to re-wrap every record - future work.
-- Rotating a per-account key only applies to new data; existing notes/images/cards are not
+- Rotating a per-account key only applies to new data; existing images/cards are not
   re-encrypted under the new key version (they keep decrypting fine under their old one).
 - The audit log's hash chain proves a row wasn't quietly edited; it does not stop someone
   with direct database access from deleting the whole table and starting a fresh chain.

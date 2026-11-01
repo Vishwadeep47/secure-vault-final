@@ -1,6 +1,6 @@
 """Tamper-evident audit log: each row is hash-chained to the one before it.
 See app/security/audit.py and GET /api/admin/logs/verify."""
-from tests.helpers import db
+from tests.helpers import card_body, db
 
 
 def test_chain_starts_valid_on_a_fresh_log(client, admin):
@@ -11,7 +11,7 @@ def test_chain_starts_valid_on_a_fresh_log(client, admin):
 
 
 def test_chain_stays_valid_after_normal_activity(client, admin, alice, bob):
-    client.post("/api/vault/notes", json={"title": "t", "content": "c"}, headers=alice)
+    client.post("/api/vault/cards", json=card_body(), headers=alice)
     client.post("/api/logout", headers=bob)
     resp = client.get("/api/admin/logs/verify", headers=admin)
     assert resp.json["ok"] is True
@@ -31,7 +31,7 @@ def test_editing_a_logged_event_breaks_the_chain(app, client, admin):
 
 
 def test_deleting_a_logged_event_breaks_the_chain(app, client, admin, alice):
-    client.post("/api/vault/notes", json={"title": "t", "content": "c"}, headers=alice)
+    client.post("/api/vault/cards", json=card_body(), headers=alice)
 
     conn = db(app)
     rows = conn.execute("SELECT id FROM audit_log ORDER BY id ASC").fetchall()

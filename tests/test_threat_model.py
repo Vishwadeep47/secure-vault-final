@@ -23,7 +23,7 @@ from app.auth import passwords
 from app.auth.tokens import create_token
 from app.crypto import aes, userkeys
 from app.security import mailer
-from tests.helpers import (HOLDER, NOTE_TEXT, PAN, PASSWORD, b64url, b64url_decode, bearer,
+from tests.helpers import (HOLDER, PAN, PASSWORD, b64url, b64url_decode, bearer,
                            card_body, db, flip_last_byte, png_bytes)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -32,10 +32,6 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 # ============================================================ small shortcuts
 def login(client, name, password=PASSWORD, **extra):
     return client.post("/api/login", json={"username": name, "password": password, **extra})
-
-
-def add_note(client, headers, title="t", content=NOTE_TEXT):
-    return client.post("/api/vault/notes", json={"title": title, "content": content}, headers=headers).json["id"]
 
 
 def add_card(client, headers, number="4242 4242 4242 4242"):
@@ -70,13 +66,12 @@ def image_file(app, image_id):
 
 # ======================================================= T01 database stolen
 def test_T01_stolen_database_and_files_reveal_nothing(app, client, alice):
-    add_note(client, alice)
     add_card(client, alice)
     add_image(client, alice)
     mfa_secret = client.post("/api/mfa/setup", headers=alice).json["secret"]
 
     raw = open(app.config["DB_PATH"], "rb").read()
-    for needle in (PASSWORD, NOTE_TEXT, PAN, HOLDER, mfa_secret):
+    for needle in (PASSWORD, PAN, HOLDER, mfa_secret):
         assert needle.encode() not in raw, f"{needle!r} found in the database file"
 
 
@@ -226,16 +221,6 @@ def test_T05_missing_or_malformed_authorization_header_is_rejected(client, alice
 
 
 # ==================================================== T06 tampered stored data
-def test_T06_edited_note_fails_the_integrity_check(app, client, alice):
-    note = add_note(client, alice)
-    con = db(app)
-    enc = con.execute("SELECT content_enc FROM notes WHERE id=?", (note,)).fetchone()[0]
-    con.execute("UPDATE notes SET content_enc=? WHERE id=?", (flip_last_byte(enc), note))
-    con.commit()
-    assert client.get(f"/api/vault/notes/{note}", headers=alice).status_code == 500
-    assert "note_integrity_failure" in audit_events(app)
-
-
 def test_T06_edited_image_file_fails_the_integrity_check(app, client, alice):
     image = add_image(client, alice)
     path = image_file(app, image)
@@ -258,24 +243,6 @@ def test_T06_edited_card_data_fails_the_integrity_check(app, client, alice):
 
 
 # ============================================ T07 ciphertext moved to another record
-def test_T07_note_copied_to_another_users_row_cannot_be_read(app, client, alice, bob):
-    a, b = add_note(client, alice), add_note(client, bob, content="bob's own text")
-    con = db(app)
-    enc = con.execute("SELECT content_enc FROM notes WHERE id=?", (a,)).fetchone()[0]
-    con.execute("UPDATE notes SET content_enc=? WHERE id=?", (enc, b))
-    con.commit()
-    assert client.get(f"/api/vault/notes/{b}", headers=bob).status_code == 500
-
-
-def test_T07_two_notes_of_the_same_user_cannot_be_swapped(app, client, alice):
-    a, b = add_note(client, alice, "A", "content A"), add_note(client, alice, "B", "content B")
-    con = db(app)
-    enc = con.execute("SELECT content_enc FROM notes WHERE id=?", (a,)).fetchone()[0]
-    con.execute("UPDATE notes SET content_enc=? WHERE id=?", (enc, b))
-    con.commit()
-    assert client.get(f"/api/vault/notes/{b}", headers=alice).status_code == 500
-
-
 def test_T07_card_copied_to_another_users_row_cannot_be_read(app, client, alice, bob):
     a, b = add_card(client, alice), add_card(client, bob, "5555555555554444")
     con = db(app)
@@ -293,20 +260,16 @@ def test_T07_image_file_copied_to_another_users_record_cannot_be_read(app, clien
 
 # ======================================================= T08 reading other users' data
 def test_T08_another_user_gets_404_for_every_route_and_every_id(client, alice, bob):
-    note, image, card = add_note(client, alice), add_image(client, alice), add_card(client, alice)
+    image, card = add_image(client, alice), add_card(client, alice)
     for i in range(1, 6):  # includes the real ids and guesses around them
-        assert client.get(f"/api/vault/notes/{i}", headers=bob).status_code == 404
-        assert client.put(f"/api/vault/notes/{i}", json={"title": "x", "content": "hacked"}, headers=bob).status_code == 404
-        assert client.delete(f"/api/vault/notes/{i}", headers=bob).status_code == 404
         assert client.get(f"/api/vault/images/{i}", headers=bob).status_code == 404
         assert client.delete(f"/api/vault/images/{i}", headers=bob).status_code == 404
         assert client.get(f"/api/vault/cards/{i}", headers=bob).status_code == 404
         assert client.delete(f"/api/vault/cards/{i}", headers=bob).status_code == 404
         assert client.post(f"/api/vault/cards/{i}/reveal", json={"password": PASSWORD}, headers=bob).status_code == 404
-    for path in ("notes", "images", "cards"):
+    for path in ("images", "cards"):
         assert list(client.get(f"/api/vault/{path}", headers=bob).json.values())[0] == []
     # alice's data survived all of that
-    assert client.get(f"/api/vault/notes/{note}", headers=alice).json["content"] == NOTE_TEXT
     assert client.get(f"/api/vault/images/{image}", headers=alice).status_code == 200
     assert client.get(f"/api/vault/cards/{card}", headers=alice).status_code == 200
 
@@ -462,7 +425,7 @@ def test_T13_key_folder_is_not_reachable_from_the_web(client):
 
 
 # ================================================================== T14 SQL injection
-INJECTIONS = ["' OR '1'='1", "admin' --", "x'; DROP TABLE users; --", "\" OR \"\"=\"", "1; DELETE FROM notes"]
+INJECTIONS = ["' OR '1'='1", "admin' --", "x'; DROP TABLE users; --", "\" OR \"\"=\"", "1; DELETE FROM images"]
 
 
 @pytest.mark.parametrize("payload", INJECTIONS)
@@ -477,11 +440,11 @@ def test_T14_registration_refuses_injection_in_the_username(client, admin, paylo
 
 
 @pytest.mark.parametrize("payload", INJECTIONS)
-def test_T14_injection_text_in_notes_is_stored_and_returned_as_plain_text(app, client, alice, payload):
-    note = add_note(client, alice, title=payload, content=payload)
-    assert client.get(f"/api/vault/notes/{note}", headers=alice).json["title"] == payload
+def test_T14_injection_text_in_a_card_holder_name_is_stored_and_returned_as_plain_text(app, client, alice, payload):
+    card_id = client.post("/api/vault/cards", json=card_body(holder_name=payload), headers=alice).json["id"]
+    assert client.get(f"/api/vault/cards/{card_id}", headers=alice).json["holder"] == payload
     tables = {r[0] for r in db(app).execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"users", "notes", "images", "cards", "audit_log"} <= tables
+    assert {"users", "images", "cards", "audit_log"} <= tables
 
 
 @pytest.mark.parametrize("payload", INJECTIONS)
@@ -492,8 +455,8 @@ def test_T14_admin_log_filters_are_safe(client, admin, payload):
 
 
 def test_T14_odd_ids_in_the_address_are_rejected(client, alice):
-    for bad in ("1%20OR%201=1", "1;DROP%20TABLE%20notes", "-1", "abc"):
-        assert client.get(f"/api/vault/notes/{bad}", headers=alice).status_code == 404
+    for bad in ("1%20OR%201=1", "1;DROP%20TABLE%20images", "-1", "abc"):
+        assert client.get(f"/api/vault/images/{bad}", headers=alice).status_code == 404
 
 
 # ======================================================= T15 password reset abuse
@@ -594,15 +557,15 @@ def test_T17_pages_carry_strict_browser_security_headers(client):
 
 
 def test_T17_api_answers_are_never_cached(client, alice):
-    for path in ("/api/me", "/api/vault/notes", "/api/vault/cards", "/api/vault/images"):
+    for path in ("/api/me", "/api/vault/cards", "/api/vault/images"):
         assert client.get(path, headers=alice).headers.get("Cache-Control") == "no-store"
 
 
-def test_T17_script_in_a_note_is_returned_as_data_not_as_a_page(client, alice):
+def test_T17_script_in_a_card_holder_name_is_returned_as_data_not_as_a_page(client, alice):
     payload = "<script>alert(document.cookie)</script>"
-    note = add_note(client, alice, title=payload, content=payload)
-    r = client.get(f"/api/vault/notes/{note}", headers=alice)
-    assert r.content_type.startswith("application/json") and r.json["content"] == payload
+    card_id = client.post("/api/vault/cards", json=card_body(holder_name=payload), headers=alice).json["id"]
+    r = client.get(f"/api/vault/cards/{card_id}", headers=alice)
+    assert r.content_type.startswith("application/json") and r.json["holder"] == payload
 
 
 def test_T17_frontend_code_never_builds_html_from_text():

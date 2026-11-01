@@ -215,7 +215,7 @@ def my_activity():
 @auth_bp.post("/encryption-key/rotate")
 @require_auth()
 def rotate_encryption_key():
-    """Issues a new personal data key. New notes, images, and cards will be
+    """Issues a new personal data key. New images and cards will be
     encrypted with it; existing ones keep decrypting fine under the key
     version they were written with (see app/crypto/userkeys.py)."""
     data = _json()

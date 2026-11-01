@@ -1,35 +1,45 @@
 """A user's own recent activity: GET /api/me/activity in app/auth/routes.py.
 Unlike the admin audit log viewer, this is available to any signed-in user,
 scoped to events about their own account."""
+import io
+
+from tests.helpers import png_bytes
 from tests.test_threat_model import login
 
 
+def _add_image(client, headers, seed=1):
+    return client.post(
+        "/api/vault/images", data={"file": (io.BytesIO(png_bytes(seed)), "p.png")},
+        headers=headers, content_type="multipart/form-data",
+    )
+
+
 def test_activity_includes_this_users_own_events(client, alice):
-    client.post("/api/vault/notes", json={"title": "t", "content": "c"}, headers=alice)
+    _add_image(client, alice)
     resp = client.get("/api/me/activity", headers=alice)
     assert resp.status_code == 200
     events = [e["event"] for e in resp.json["events"]]
-    assert "note_created" in events
+    assert "image_uploaded" in events
 
 
 def test_activity_does_not_include_another_users_events(client, alice, bob):
-    client.post("/api/vault/notes", json={"title": "t", "content": "c"}, headers=bob)
+    _add_image(client, bob)
     resp = client.get("/api/me/activity", headers=alice)
     events = [e["event"] for e in resp.json["events"]]
-    assert "note_created" not in events
+    assert "image_uploaded" not in events
 
 
 def test_activity_is_newest_first(client, alice):
-    client.post("/api/vault/notes", json={"title": "a", "content": "x"}, headers=alice)
-    client.post("/api/vault/notes", json={"title": "b", "content": "y"}, headers=alice)
+    _add_image(client, alice, seed=1)
+    _add_image(client, alice, seed=2)
     events = client.get("/api/me/activity", headers=alice).json["events"]
-    created = [e for e in events if e["event"] == "note_created"]
-    assert len(created) == 2  # order among same-event rows isn't asserted here, just presence
+    uploaded = [e for e in events if e["event"] == "image_uploaded"]
+    assert len(uploaded) == 2  # order among same-event rows isn't asserted here, just presence
 
 
 def test_activity_respects_a_limit(client, alice):
     for i in range(5):
-        client.post("/api/vault/notes", json={"title": str(i), "content": "x"}, headers=alice)
+        _add_image(client, alice, seed=i)
     resp = client.get("/api/me/activity?limit=2", headers=alice)
     assert len(resp.json["events"]) == 2
     assert resp.json["total"] >= 5

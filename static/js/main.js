@@ -3,7 +3,7 @@
   "use strict";
   const SV = window.SV;
   const PUBLIC = ["login", "register", "forgot"];
-  const ALWAYS_ACCESSIBLE = PUBLIC.concat(["shared"]); // "shared" works whether or not you're logged in
+  const ALWAYS_ACCESSIBLE = PUBLIC;
 
   SV.navigate = function (hash) {
     if (window.location.hash === hash) render(); else window.location.hash = hash;
@@ -29,9 +29,9 @@
     const isAlwaysAccessible = ALWAYS_ACCESSIBLE.indexOf(route.name) >= 0;
 
     if (!session && !isAlwaysAccessible) return SV.navigate("#/login");
-    if (session && (route.name === "" || isPublic)) return SV.navigate("#/vault/notes");
-    if (route.name === "admin" && session.role !== "admin") return SV.navigate("#/vault/notes");
-    if (!SV.views[route.name]) return SV.navigate(session ? "#/vault/notes" : "#/login");
+    if (session && (route.name === "" || isPublic)) return SV.navigate("#/vault/chat");
+    if (route.name === "admin" && session.role !== "admin") return SV.navigate("#/vault/chat");
+    if (!SV.views[route.name]) return SV.navigate(session ? "#/vault/chat" : "#/login");
 
     document.getElementById("app").replaceChildren(SV.views[route.name](route.sub));
     window.scrollTo(0, 0);

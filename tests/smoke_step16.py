@@ -42,8 +42,10 @@ def make_user(name):
 admin = make_user("alice")  # first account = admin
 bob = make_user("bob")
 carol = make_user("carol")
-for title in ("one", "two"):
-    client.post("/api/vault/notes", json={"title": title, "content": "text"}, headers=bob)
+for number in ("4242424242424242", "5555555555554444"):
+    client.post("/api/vault/cards", json={
+        "card_number": number, "holder_name": "Bob Holder", "exp_month": 12, "exp_year": 2030,
+    }, headers=bob)
 
 # --- access control -----------------------------------------------------------
 for path in ("logs", "users", "stats"):
@@ -84,7 +86,7 @@ r = client.get("/api/admin/users", headers=admin)
 users = {u["username"]: u for u in r.json["users"]}
 check("user list shows all three users", set(users) == {"alice", "bob", "carol"})
 check("roles are correct", users["alice"]["role"] == "admin" and users["bob"]["role"] == "user")
-check("item counts are shown", users["bob"]["notes_count"] == 2 and users["carol"]["notes_count"] == 0)
+check("item counts are shown", users["bob"]["cards_count"] == 2 and users["carol"]["cards_count"] == 0)
 text = r.get_data(as_text=True)
 check("no password hashes or MFA secrets in the user list",
       "$argon2" not in text and "password_hash" not in text and "mfa_secret" not in text)
@@ -92,7 +94,7 @@ check("no password hashes or MFA secrets in the user list",
 # --- stats ----------------------------------------------------------------------
 s = client.get("/api/admin/stats", headers=admin).json
 check("stats counts are correct",
-      s["users"] == 3 and s["admins"] == 1 and s["notes"] == 2 and s["images"] == 0 and s["cards"] == 0
+      s["users"] == 3 and s["admins"] == 1 and s["images"] == 0 and s["cards"] == 2
       and s["mfa_enabled_users"] == 0)
 check("stats include recent events", s["events_last_24h"].get("register") == 3)
 

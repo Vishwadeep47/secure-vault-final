@@ -1,134 +1,106 @@
-/* The vault: notes, images, cards. */
+/* The vault: a chat about the encryption used here, images, cards. */
 (function () {
   "use strict";
   const SV = window.SV;
   const h = SV.h, field = SV.field, api = SV.api;
 
   SV.views.vault = function (sub) {
-    const tab = ["notes", "images", "cards"].indexOf(sub) >= 0 ? sub : "notes";
+    const tab = ["chat", "images", "cards"].indexOf(sub) >= 0 ? sub : "chat";
     const body = h("div", {});
     const tabs = h("div", { class: "tabs" },
-      [["notes", "Notes"], ["images", "Images"], ["cards", "Cards"]].map(function (t) {
+      [["chat", "Chat"], ["images", "Images"], ["cards", "Cards"]].map(function (t) {
         return h("a", { href: "#/vault/" + t[0], class: "tab" + (t[0] === tab ? " active" : "") }, t[1]);
       }));
     SV.tabs[tab](body);
     return SV.appShell("vault", [tabs, body]);
   };
 
-  /* ------------------------------------------------------------------ notes */
-  SV.tabs.notes = function (root) {
-    let editingId = null;
-    const title = field("Title", { type: "text", maxlength: "200", required: true });
-    const content = field("Note", { tag: "textarea", rows: "6", maxlength: "20000", required: true });
-    const msg = SV.msgBox();
-    const formHeading = h("h2", {}, "New note");
-    const saveBtn = h("button", { class: "btn primary", type: "submit" }, "Save note");
-    const form = h("form", { class: "card", hidden: true, onsubmit: save },
-      formHeading, title.wrap, content.wrap, msg,
-      h("div", { class: "row" }, saveBtn, h("button", { class: "btn", type: "button", onclick: closeForm }, "Cancel")));
-    const detail = h("div", {});
-    const list = h("div", { class: "list" });
+  /* ------------------------------------------------------------------- chat
+     Offline, built-in FAQ chat about the encryption techniques used in this
+     project (AES-256-GCM, Argon2, TOTP, JWTs, the hash-chained audit log,
+     per-user keys). Entirely client-side, pattern-matched against a fixed
+     set of topics - no external API, no network call, no key to configure. */
+  const CHAT_TOPICS = [
+    {
+      keys: ["aes", "gcm", "encrypt", "cipher", "vault data", "images", "cards"],
+      q: "How is my data encrypted?",
+      a: "Images and card details are encrypted with AES-256-GCM before they ever reach the database or disk. Every item gets a fresh random nonce, and the ciphertext is bound (via associated data) to its owner and its own record id, so a ciphertext copied onto someone else's row - or onto a different record - fails to decrypt instead of silently reading as something else.",
+    },
+    {
+      keys: ["argon2", "password hash", "hashing", "hash"],
+      q: "How are passwords stored?",
+      a: "Passwords are hashed with Argon2 (a memory-hard algorithm built to resist GPU/ASIC cracking) and never stored or logged in plain text. Sign-up, change, and reset all enforce a length-first policy: at least 12 characters, checked against a common-password blocklist and against your own username.",
+    },
+    {
+      keys: ["totp", "mfa", "multi-factor", "authenticator", "2fa", "two factor", "recovery code"],
+      q: "How does multi-factor authentication work?",
+      a: "MFA uses TOTP: a 6-digit code that changes every 30 seconds, generated from a shared secret and the current time, the same standard your phone's authenticator app already speaks. Once it's turned on, 8 single-use recovery codes are issued (stored only as hashes) in case the app is unavailable; regenerating them invalidates the old set.",
+    },
+    {
+      keys: ["jwt", "token", "session", "login", "logout"],
+      q: "How are sessions kept secure?",
+      a: "A signed JWT is issued on login and lasts 15 minutes. Each account also has a token_version counter in the database; logging out, changing or resetting a password, or an admin disabling the account all bump it, which makes every token issued before that moment stop working immediately - instead of just expiring on its own later.",
+    },
+    {
+      keys: ["key rotation", "per-user key", "per user key", "own key", "wrapped key", "master key"],
+      q: "What is a per-user encryption key?",
+      a: "Each account gets its own random 256-bit data key instead of everyone sharing one key. That key is itself encrypted (\"wrapped\") by a server master key kept outside the database, in a separate .secrets folder. Rotating your key issues a new version for anything you save afterwards; older items keep decrypting fine under the key version that originally wrote them.",
+    },
+    {
+      keys: ["audit", "log", "tamper", "hash chain", "chain"],
+      q: "What is the audit log, and how is it tamper-evident?",
+      a: "Every security-relevant event (logins, card and image activity, admin actions) is written to an audit log where each row's hash covers its own fields plus the previous row's hash - a hash chain. Editing, deleting, or reordering any row breaks the chain from that point on, and an admin can recompute it to find exactly where.",
+    },
+    {
+      keys: ["card", "cvv", "luhn", "payment"],
+      q: "How are payment cards protected?",
+      a: "Card numbers are checked with the Luhn algorithm, then encrypted; only a token and the last 4 digits are stored outside the ciphertext. The CVV is never asked for and never stored. Revealing a full number requires your password (and MFA if enabled) again, and the number hides itself - and clears the clipboard - after 15 seconds.",
+    },
+  ];
+  const CHAT_FALLBACK = "I don't have a canned answer for that. Try asking about encryption, passwords, MFA, sessions, per-user keys, the audit log, or cards.";
+  const CHAT_GREETING = "Ask me about the security tech behind SecureVault - AES-GCM encryption, Argon2 password hashing, TOTP/MFA, sessions, per-user keys, or the audit log.";
+
+  function chatAnswer(text) {
+    const q = text.toLowerCase();
+    const hit = CHAT_TOPICS.find(function (t) { return t.keys.some(function (k) { return q.indexOf(k) >= 0; }); });
+    return hit ? hit.a : CHAT_FALLBACK;
+  }
+
+  SV.tabs.chat = function (root) {
+    const log = h("div", { class: "chat-log" });
+    const input = field("Ask about the encryption used here", { type: "text", maxlength: "200", autocomplete: "off" });
+    const sendBtn = h("button", { class: "btn primary", type: "submit" }, "Ask");
+    const form = h("form", { class: "chat-form", onsubmit: ask }, input.wrap, sendBtn);
+
+    function addBubble(text, who) {
+      log.append(h("div", { class: "chat-bubble " + who }, text));
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function addSuggestions() {
+      const row = h("div", { class: "chat-suggestions" },
+        CHAT_TOPICS.map(function (t) {
+          return h("button", { class: "pill", type: "button", onclick: function () { input.input.value = t.q; ask(); } }, t.q);
+        }));
+      log.append(row);
+    }
+
+    function ask(ev) {
+      if (ev) ev.preventDefault();
+      const text = input.input.value.trim();
+      if (!text) return;
+      addBubble(text, "me");
+      input.input.value = "";
+      setTimeout(function () { addBubble(chatAnswer(text), "bot"); }, 150);
+    }
 
     root.append(
-      h("div", { class: "row between" }, h("h2", {}, "Notes"),
-        h("button", { class: "btn primary small", type: "button", onclick: function () { openForm(null); } }, "+ New note")),
-      form, detail, list);
-
-    function openForm(note) {
-      editingId = note ? note.id : null;
-      formHeading.textContent = note ? "Edit note" : "New note";
-      title.input.value = note ? note.title : "";
-      content.input.value = note ? note.content : "";
-      SV.showMsg(msg, "");
-      form.hidden = false;
-      title.input.focus();
-    }
-    function closeForm() { form.hidden = true; editingId = null; }
-
-    async function save(ev) {
-      ev.preventDefault();
-      const ok = await SV.run(saveBtn, msg, async function () {
-        const body = { title: title.input.value.trim(), content: content.input.value };
-        if (editingId) await api.put("/api/vault/notes/" + editingId, body);
-        else await api.post("/api/vault/notes", body);
-        return true;
-      });
-      if (ok) {
-        SV.toast("Note saved (encrypted).", "ok");
-        closeForm();
-        detail.replaceChildren();
-        load();
-      }
-    }
-
-    async function openNote(id) {
-      const note = await SV.run(null, null, function () { return api.get("/api/vault/notes/" + id); });
-      if (!note) return;
-      const shareSlot = h("div", {});
-      detail.replaceChildren(h("div", { class: "card" },
-        h("h2", {}, note.title),
-        h("p", { class: "muted" }, "Updated " + SV.formatTime(note.updated_at)),
-        h("pre", { class: "pre" }, note.content),
-        h("div", { class: "row wrap" },
-          h("button", { class: "btn small", type: "button", onclick: function () { openForm(note); } }, "Edit"),
-          h("button", { class: "btn small", type: "button", onclick: function () { toggleShare(note.id, shareSlot); } }, "Share"),
-          h("button", { class: "btn small danger", type: "button", onclick: function () { remove(note); } }, "Delete"),
-          h("button", { class: "btn small", type: "button", onclick: function () { detail.replaceChildren(); } }, "Close")),
-        shareSlot));
-    }
-
-    async function toggleShare(noteId, slot) {
-      if (slot.childNodes.length) { slot.replaceChildren(); return; }
-      const status = await SV.run(null, null, function () { return api.get("/api/vault/notes/" + noteId + "/share"); });
-      if (!status) return;
-      renderShare(noteId, slot, status);
-    }
-
-    function renderShare(noteId, slot, status) {
-      if (!status.active) {
-        slot.replaceChildren(
-          h("p", { class: "muted" }, "No active share link for this note."),
-          h("button", { class: "btn small", type: "button", onclick: async function () {
-            const data = await SV.run(null, null, function () { return api.post("/api/vault/notes/" + noteId + "/share", {}); });
-            if (data) renderShare(noteId, slot, { active: true, expires_at: data.expires_at, freshToken: data.token, minutes: data.minutes });
-          } }, "Create a one-time share link"));
-        return;
-      }
-      const url = window.location.origin + window.location.pathname + "#/shared/" + (status.freshToken || "");
-      const children = [h("p", { class: "muted" }, "Active until " + new Date(status.expires_at * 1000).toLocaleString() + ". Works once; opening it uses it up.")];
-      if (status.freshToken) {
-        children.push(
-          h("p", { class: "mono" }, url),
-          h("button", { class: "btn small", type: "button", onclick: function () {
-            navigator.clipboard.writeText(url).then(function () { SV.toast("Link copied.", "ok"); }).catch(function () {});
-          } }, "Copy link"));
-      } else {
-        children.push(h("p", { class: "muted" }, "The link itself is only shown once, right after you create it."));
-      }
-      children.push(h("button", { class: "btn small danger", type: "button", onclick: async function () {
-        const ok = await SV.run(null, null, async function () { await api.del("/api/vault/notes/" + noteId + "/share"); return true; });
-        if (ok) { SV.toast("Share link revoked.", "ok"); slot.replaceChildren(); }
-      } }, "Revoke"));
-      slot.replaceChildren.apply(slot, children);
-    }
-
-    async function remove(note) {
-      if (!window.confirm("Delete this note permanently?")) return;
-      const ok = await SV.run(null, null, async function () { await api.del("/api/vault/notes/" + note.id); return true; });
-      if (ok) { detail.replaceChildren(); SV.toast("Note deleted."); load(); }
-    }
-
-    async function load() {
-      const data = await SV.run(null, null, function () { return api.get("/api/vault/notes"); });
-      if (!data) return;
-      list.replaceChildren();
-      if (!data.notes.length) list.append(h("p", { class: "muted" }, "No notes yet. Create your first one."));
-      data.notes.forEach(function (n) {
-        list.append(h("button", { class: "list-item", type: "button", onclick: function () { openNote(n.id); } },
-          h("strong", {}, n.title), h("span", { class: "muted" }, SV.formatTime(n.updated_at))));
-      });
-    }
-    load();
+      h("div", { class: "row between" }, h("h2", {}, "Encryption chat"),
+        h("span", { class: "muted" }, "Offline - built-in answers only")),
+      log, form);
+    addBubble(CHAT_GREETING, "bot");
+    addSuggestions();
+    input.input.focus();
   };
 
   /* ----------------------------------------------------------------- images */

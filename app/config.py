@@ -36,15 +36,6 @@ class Config:
     # MFA recovery codes
     RECOVERY_CODE_COUNT = 8
 
-    # Secure share links (one note, one view)
-    SHARE_LINK_MINUTES = 60
-    SHARE_ATTEMPTS_PER_WINDOW = 20    # guesses at a share token per IP per window
-    SHARE_WINDOW_SECONDS = 900
-
-    # Vault notes
-    NOTE_TITLE_MAX = 200
-    NOTE_CONTENT_MAX = 20000
-
     # Image vault
     UPLOAD_DIR = os.environ.get("VAULT_UPLOAD_DIR", os.path.join(BASE_DIR, "uploads"))
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB per request

@@ -167,6 +167,24 @@ tr:last-child td { border-bottom: 0; }
 .filters .field { margin: 0; }
 section.block { margin-top: 1.5rem; }
 
+/* ---- encryption chat ---- */
+.chat-log {
+  display: flex; flex-direction: column; gap: .5rem; margin: .75rem 0; padding: .75rem;
+  max-height: 55vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.chat-bubble {
+  max-width: 85%; padding: .55rem .75rem; border-radius: var(--radius-sm); font-size: .92rem;
+  border: 1px solid var(--line); line-height: 1.45;
+}
+.chat-bubble.bot { align-self: flex-start; background: var(--paper); border-left: 3px solid var(--brass); }
+.chat-bubble.me { align-self: flex-end; background: var(--paper); border-right: 3px solid var(--info); text-align: right; }
+.chat-suggestions { display: flex; flex-wrap: wrap; gap: .4rem; align-self: flex-start; max-width: 100%; }
+.chat-suggestions .pill { cursor: pointer; background: transparent; font: inherit; }
+.chat-suggestions .pill:hover { color: var(--ink); border-left-color: var(--brass); }
+.chat-form { display: flex; gap: .5rem; align-items: flex-end; }
+.chat-form .field { flex: 1; margin: 0; }
+
 /* ---- toasts (the one thing that is genuinely floating, so the one place with a shadow) ---- */
 #toasts { position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + 12px + env(safe-area-inset-bottom, 0px)); z-index: 20; display: grid; gap: .5rem; justify-items: center; padding: 0 1rem; pointer-events: none; }
 .toast { max-width: 460px; padding: .7rem 1rem; border-radius: var(--radius-sm); background: var(--ink); color: var(--paper); font-size: .92rem; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); }

@@ -116,7 +116,7 @@
   /* The frame around every signed-in screen: top bar, content, bottom tabs. */
   SV.appShell = function (active, content) {
     const s = SV.session.get() || {};
-    const links = [["vault", "Vault", "#/vault/notes"], ["account", "Account", "#/account"]];
+    const links = [["vault", "Vault", "#/vault/chat"], ["account", "Account", "#/account"]];
     if (s.role === "admin") links.push(["admin", "Admin", "#/admin"]);
     return h("div", { class: "shell" },
       h("header", { class: "topbar" },

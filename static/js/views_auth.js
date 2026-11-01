@@ -18,7 +18,7 @@
      save the session if it passes. Nothing else in the login flow has to change. */
   SV.completeLogin = async function (data, username) {
     SV.session.set({ token: data.token, role: data.role, username: username });
-    SV.navigate("#/vault/notes");
+    SV.navigate("#/vault/chat");
   };
 
   SV.views.login = function () {
@@ -119,21 +119,6 @@
       again.wrap, msg, btn);
 
     return authShell("Create account", null, [form, h("div", { class: "links" }, h("a", { href: "#/login" }, "I already have an account"))]);
-  };
-
-  /* A note someone shared, opened with no login. The token is used up the
-     moment the server answers, whether or not this page shows it. */
-  SV.views.shared = function (token) {
-    const body = h("div", {}, h("p", { class: "muted" }, "Loading..."));
-    api.get("/api/vault/notes/share/" + token, { auth: false }).then(function (note) {
-      body.replaceChildren(
-        h("h1", {}, note.title),
-        h("pre", { class: "pre" }, note.content),
-        h("p", { class: "muted" }, "This link has now been used and will not open again."));
-    }).catch(function (e) {
-      body.replaceChildren(h("p", { class: "msg error" }, e.message || "This share link is invalid, used, or has expired."));
-    });
-    return authShell("Shared note", null, [body, h("div", { class: "links" }, h("a", { href: "#/login" }, "Go to SecureVault"))]);
   };
 
   SV.views.forgot = function () {

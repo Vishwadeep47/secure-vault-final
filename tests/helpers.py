@@ -7,7 +7,6 @@ import sqlite3
 from PIL import Image
 
 PASSWORD = "a-long-test-password"
-NOTE_TEXT = "TOP-SECRET-NOTE-TEXT-12345"
 PAN = "4242424242424242"  # well-known TEST card number
 HOLDER = "Asha Verma"
 

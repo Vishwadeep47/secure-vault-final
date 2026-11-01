@@ -105,19 +105,16 @@ def test_H3_old_rate_hit_rows_are_forgotten(app, monkeypatch):
 
 # ----------------------------------------------------------- H4 body size limits
 def test_H4_huge_json_bodies_are_refused_early(client, alice):
-    huge = {"title": "t", "content": "a" * 300_000}
-    r = client.post("/api/vault/notes", json=huge, headers=alice)
+    from tests.helpers import card_body
+
+    huge = card_body(label="x" * 300_000)
+    r = client.post("/api/vault/cards", json=huge, headers=alice)
     assert r.status_code == 413 and r.json == {"error": "Request body too large"}
 
 
 def test_H4_huge_json_is_refused_on_login_too(client):
     r = client.post("/api/login", json={"username": "a", "password": "b" * 500_000})
     assert r.status_code == 413
-
-
-def test_H4_the_largest_allowed_note_still_works(client, alice):
-    r = client.post("/api/vault/notes", json={"title": "big", "content": "é" * 20000}, headers=alice)
-    assert r.status_code == 201
 
 
 # ----------------------------------------------------------- H5 safe error pages
@@ -132,20 +129,21 @@ def test_H5_wrong_method_gives_plain_json(client):
 
 
 def test_H5_unexpected_crash_leaks_no_details(app, client, alice, monkeypatch):
-    from app.vault import notes
+    from app.vault import cards
+    from tests.helpers import card_body
 
     def explode():
         raise RuntimeError("secret internal detail: /home/user/app.py line 42")
 
-    monkeypatch.setattr(notes, "_now", explode)
-    r = client.post("/api/vault/notes", json={"title": "t", "content": "c"}, headers=alice)
+    monkeypatch.setattr(cards, "_now", explode)
+    r = client.post("/api/vault/cards", json=card_body(), headers=alice)
     text = r.get_data(as_text=True)
     assert r.status_code == 500 and r.json == {"error": "Internal server error"}
     assert "secret internal detail" not in text and "Traceback" not in text and "RuntimeError" not in text
 
 
 def test_H5_malformed_json_is_a_clean_400(client, alice):
-    r = client.post("/api/vault/notes", data="{not json", content_type="application/json", headers=alice)
+    r = client.post("/api/vault/cards", data="{not json", content_type="application/json", headers=alice)
     assert r.status_code == 400 and "Traceback" not in r.get_data(as_text=True)
 
 
@@ -166,7 +164,7 @@ def test_H6_strict_transport_security_only_over_https(client):
 def test_H6_other_websites_are_not_allowed_to_call_the_api(client, alice):
     evil = {"Origin": "https://evil.example"}
     assert "Access-Control-Allow-Origin" not in client.get("/api/health", headers=evil).headers
-    preflight = client.options("/api/vault/notes", headers={**evil, "Access-Control-Request-Method": "POST"})
+    preflight = client.options("/api/vault/cards", headers={**evil, "Access-Control-Request-Method": "POST"})
     assert "Access-Control-Allow-Origin" not in preflight.headers
 
 
