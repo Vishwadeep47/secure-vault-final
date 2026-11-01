@@ -39,11 +39,13 @@ def create_app(test_config=None):
     from app.admin.routes import admin_bp
     from app.auth.password_routes import password_bp
     from app.auth.routes import auth_bp
+    from app.chat.messages import messages_bp
     from app.vault.cards import cards_bp
     from app.vault.images import images_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(password_bp)
+    app.register_blueprint(messages_bp)
     app.register_blueprint(images_bp)
     app.register_blueprint(cards_bp)
     app.register_blueprint(admin_bp)

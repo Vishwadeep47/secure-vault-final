@@ -40,3 +40,8 @@ class Config:
     UPLOAD_DIR = os.environ.get("VAULT_UPLOAD_DIR", os.path.join(BASE_DIR, "uploads"))
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB per request
     IMAGE_MAX_PIXELS = 25_000_000  # rejects "decompression bomb" images
+
+    # User-to-user messages
+    MESSAGE_BODY_MAX = 2000
+    MESSAGE_SEND_LIMIT = 30           # messages a user may send per window
+    MESSAGE_SEND_WINDOW_SECONDS = 60

@@ -36,7 +36,7 @@
       const events = Object.keys(s.events_last_24h);
       stats.replaceChildren(
         h("div", { class: "stats" }, tile("Users", s.users), tile("Admins", s.admins), tile("With MFA", s.mfa_enabled_users),
-          tile("Images", s.images), tile("Cards", s.cards)),
+          tile("Images", s.images), tile("Cards", s.cards), tile("Messages", s.messages)),
         h("p", { class: "muted" }, events.length
           ? "Last 24 hours: " + events.map(function (e) { return e + " " + s.events_last_24h[e]; }).join(", ")
           : "No activity in the last 24 hours."));

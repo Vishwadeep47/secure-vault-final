@@ -21,7 +21,8 @@ Open `http://127.0.0.1:5000`. Keep a second terminal open in the same folder. Ha
 | 1:45 | Log in, open Account, set up MFA, scan the QR code, confirm with a code | "Second factor is a time-based code. The 8 recovery codes shown right after are a backup if I lose this phone." |
 | 2:30 | Log out and log in again with a code, then once more with a recovery code | "Login now needs password and code - or, just this once, a backup code instead." |
 | 3:00 | Add an image, then the test card | "Both are encrypted before they touch the disk, with a key that belongs to this account alone." |
-| 3:30 | Open the Chat tab, ask it about AES-GCM or TOTP | "This is a built-in, fully offline FAQ about our own security design - no external AI, no network call, just canned answers about what we actually built." |
+| 3:30 | Open the Chat tab, ask the built-in bot about AES-GCM or TOTP | "This is a built-in, fully offline FAQ about our own security design - no external AI, no network call, just canned answers about what we actually built." |
+| 3:50 | In the Chat tab, start a conversation with the second account (registered earlier) and send a message; switch to the second terminal/browser logged in as that user and show the message arriving within a few seconds | "That's real user-to-user messaging, not the FAQ bot. Each message is AES-256-GCM encrypted on the server before it's stored, tied to this exact conversation and message id, and the list refreshes itself every few seconds - no page reload needed." |
 | 4:00 | Press reveal on the card and enter password and code | "The CVV is never stored. Revealing the number asks for proof again, and the number clears itself (and the clipboard) after 15 seconds." |
 | 4:45 | In the second terminal run the database peek below | "This is what a thief with the database file would see." |
 | 5:30 | Open Admin: logs, stats, and press "Verify audit log integrity" | "Every sensitive event is logged, and this hash chain proves nobody quietly edited it." |
@@ -57,5 +58,6 @@ Pick a table name from that list and show a few rows of the cards table: the `pa
 - **Why no keylogger?** It attacks users; our product defends them.
 - **How does the audit log prove it wasn't edited?** Each row's hash includes the row before it, like a mini blockchain. Change any field in any row and every hash after it stops matching.
 - **What happens to old images and cards when I rotate my key?** They keep working - they're tagged with the key version that encrypted them, so decryption always uses the right one.
-- **Does the Chat tab call an AI?** No - it's a small offline list of canned topics matched by keyword, built so there's no external API, no key to configure, and nothing ever leaves the browser.
+- **Does the Chat tab call an AI?** The FAQ bot entry doesn't - it's a small offline list of canned topics matched by keyword, no external API, no key, nothing leaves the browser. The other entries in that same tab are real messages to real users, encrypted and stored server-side.
+- **Are the user-to-user messages end-to-end encrypted?** No - they're encrypted at rest under the server's master key, the same trust model as the images and cards. The server can decrypt them to deliver them to both people; a real end-to-end design would need per-account private keys the server never sees.
 - **What is missing?** Face login, email for reset, and HTTPS (the app sends the right header for it, but needs a reverse proxy in front to actually terminate TLS).

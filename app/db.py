@@ -86,6 +86,22 @@ CREATE TABLE IF NOT EXISTS recovery_codes (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- User-to-user messages. Each body is AES-256-GCM encrypted (see app/chat/
+-- messages.py) with the associated data bound to the conversation pair and
+-- the message's own id, so a ciphertext moved to another message or another
+-- conversation fails to decrypt.
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL,
+    recipient_id INTEGER NOT NULL,
+    body_enc TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (sender_id) REFERENCES users(id),
+    FOREIGN KEY (recipient_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id);
+
 -- Login lockouts and request counters, kept in the database so a server
 -- restart cannot reset an attack that is in progress.
 CREATE TABLE IF NOT EXISTS login_failures (

@@ -66,7 +66,11 @@
     return hit ? hit.a : CHAT_FALLBACK;
   }
 
-  SV.tabs.chat = function (root) {
+  const MESSAGE_POLL_MS = 3000;
+
+  /* The bot thread is the same offline FAQ as before, just reframed as one
+     pinned "conversation" in the list instead of the whole tab. */
+  function renderBotThread(body) {
     const log = h("div", { class: "chat-log" });
     const input = field("Ask about the encryption used here", { type: "text", maxlength: "200", autocomplete: "off" });
     const sendBtn = h("button", { class: "btn primary", type: "submit" }, "Ask");
@@ -76,7 +80,6 @@
       log.append(h("div", { class: "chat-bubble " + who }, text));
       log.scrollTop = log.scrollHeight;
     }
-
     function addSuggestions() {
       const row = h("div", { class: "chat-suggestions" },
         CHAT_TOPICS.map(function (t) {
@@ -84,7 +87,6 @@
         }));
       log.append(row);
     }
-
     function ask(ev) {
       if (ev) ev.preventDefault();
       const text = input.input.value.trim();
@@ -94,13 +96,121 @@
       setTimeout(function () { addBubble(chatAnswer(text), "bot"); }, 150);
     }
 
-    root.append(
-      h("div", { class: "row between" }, h("h2", {}, "Encryption chat"),
-        h("span", { class: "muted" }, "Offline - built-in answers only")),
-      log, form);
+    body.append(log, form);
     addBubble(CHAT_GREETING, "bot");
     addSuggestions();
     input.input.focus();
+  }
+
+  /* A real conversation with another user. Messages are encrypted server-side
+     (AES-256-GCM, see app/chat/messages.py) and decrypted before they reach
+     this screen; polling checks for anything new every few seconds. */
+  function renderUserThread(body, username) {
+    const log = h("div", { class: "chat-log" });
+    const msg = SV.msgBox();
+    const input = field("Message " + username, { type: "text", maxlength: "2000", autocomplete: "off" });
+    const sendBtn = h("button", { class: "btn primary", type: "submit" }, "Send");
+    const form = h("form", { class: "chat-form", onsubmit: send }, input.wrap, sendBtn);
+    let lastId = 0;
+    let timer = null;
+
+    function addBubble(m) {
+      const empty = log.querySelector(".chat-empty");
+      if (empty) empty.remove();
+      const bubble = h("div", { class: "chat-bubble " + (m.from_me ? "me" : "them") }, m.body);
+      if (m.from_me) {
+        bubble.append(h("button", {
+          class: "chat-delete", type: "button", title: "Delete",
+          onclick: async function () {
+            const ok = await SV.run(null, null, async function () { await api.del("/api/chat/messages/" + m.id); return true; });
+            if (ok) bubble.remove();
+          },
+        }, "×"));
+      }
+      log.append(bubble);
+      log.scrollTop = log.scrollHeight;
+      if (m.id > lastId) lastId = m.id;
+    }
+
+    async function poll() {
+      const data = await SV.run(null, null, function () { return api.get("/api/chat/messages/" + username + "?after=" + lastId); });
+      if (data) data.messages.forEach(addBubble);
+    }
+
+    async function send(ev) {
+      ev.preventDefault();
+      const text = input.input.value.trim();
+      if (!text) return;
+      const sent = await SV.run(sendBtn, msg, function () { return api.post("/api/chat/messages/" + username, { body: text }); });
+      if (sent) {
+        addBubble(sent);
+        input.input.value = "";
+        input.input.focus();
+      }
+    }
+
+    (async function initial() {
+      const data = await SV.run(null, null, function () { return api.get("/api/chat/messages/" + username); });
+      if (data) data.messages.forEach(addBubble);
+      if (!data || !data.messages.length) log.append(h("p", { class: "muted chat-empty" }, "No messages yet. Say hello."));
+    })();
+    timer = setInterval(poll, MESSAGE_POLL_MS);
+    SV.onLeave(function () { clearInterval(timer); });
+
+    body.append(log, msg, form);
+    input.input.focus();
+  }
+
+  SV.tabs.chat = function (root) {
+    const body = h("div", {});
+
+    function openThread(username, isBot) {
+      body.replaceChildren();
+      const back = h("a", { href: "#", class: "muted", onclick: function (ev) { ev.preventDefault(); renderList(); } }, "← Back");
+      const title = h("h2", {}, isBot ? "SecureVault Bot" : username);
+      body.append(h("div", { class: "row between" }, title, back));
+      if (isBot) renderBotThread(body);
+      else renderUserThread(body, username);
+    }
+
+    function openPicker() {
+      body.replaceChildren();
+      const back = h("a", { href: "#", class: "muted", onclick: function (ev) { ev.preventDefault(); renderList(); } }, "← Back");
+      body.append(h("div", { class: "row between" }, h("h2", {}, "New message"), back));
+      const list = h("div", { class: "list" });
+      body.append(list);
+      SV.run(null, null, function () { return api.get("/api/chat/users"); }).then(function (data) {
+        if (!data) return;
+        if (!data.users.length) { list.append(h("p", { class: "muted" }, "No other accounts to message yet.")); return; }
+        data.users.forEach(function (u) {
+          list.append(h("button", { class: "list-item", type: "button", onclick: function () { openThread(u, false); } }, u));
+        });
+      });
+    }
+
+    function renderList() {
+      body.replaceChildren();
+      body.append(
+        h("div", { class: "row between" }, h("h2", {}, "Chat"),
+          h("button", { class: "btn small", type: "button", onclick: openPicker }, "+ New message")));
+      const list = h("div", { class: "list" });
+      list.append(h("button", {
+        class: "list-item", type: "button", onclick: function () { openThread(null, true); },
+      }, h("strong", {}, "SecureVault Bot"), h("span", { class: "muted" }, "Ask about our encryption")));
+      body.append(list);
+
+      SV.run(null, null, function () { return api.get("/api/chat/conversations"); }).then(function (data) {
+        if (!data) return;
+        data.conversations.forEach(function (c) {
+          list.append(h("button", { class: "list-item", type: "button", onclick: function () { openThread(c.username, false); } },
+            h("strong", {}, c.username),
+            h("span", { class: "muted" }, (c.last_from_me ? "You: " : "") + (c.preview || "") + " · " + SV.formatTime(c.last_at))));
+        });
+      });
+    }
+
+    root.append(body);
+    renderList();
   };
 
   /* ----------------------------------------------------------------- images */

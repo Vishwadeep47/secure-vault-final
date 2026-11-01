@@ -2,7 +2,7 @@
 
 Method: STRIDE-style review. Each threat lists the attack, the defence built, and the test that proves it. Test IDs refer to `tests/test_threat_model.py` (T01-T17) and `tests/test_hardening.py` (H1-H9).
 
-**Assets:** images, card data, passwords, MFA secrets, session tokens, encryption keys, audit log.
+**Assets:** images, card data, user-to-user messages, passwords, MFA secrets, session tokens, encryption keys, audit log.
 **Attackers considered:** anonymous internet user, a registered user attacking another user, someone who steals the database file, someone who steals a session token.
 
 | ID | Threat | Attack example | Defence | Test |
@@ -31,6 +31,8 @@ Method: STRIDE-style review. Each threat lists the attack, the defence built, an
 | T21 | Silent tampering with the audit trail | Edit or delete a row to hide an attack | Each row's hash covers its own fields plus the row before it; one admin call recomputes the whole chain and names the first broken row | test_audit_chain.py |
 | T22 | One compromised key exposes every account's data | Master key leaks | Each account's vault data is under its own key (wrapped by the master key); a rotation is per-account, not all-or-nothing | test_user_keys.py |
 | T24 | Session left open on a shared machine | Forgetting to log out on a public computer | Idle auto-logout after 5 minutes of no activity, on top of the 15-minute token lifetime | frontend, static/js/main.js |
+| T25 | Reading or tampering with someone else's conversation | Guess message ids, swap ciphertext between messages or conversations | Each query is scoped to "messages between me and the named user" (no cross-user leakage by construction); AES-256-GCM with associated data bound to the conversation pair and message id, so moved ciphertext fails to decrypt | test_messages.py |
+| T26 | Message spam / flooding another user | Script sends thousands of messages a second | Per-account send rate limit (config `MESSAGE_SEND_LIMIT`), same DB-backed limiter as login | test_messages.py |
 
 ## Out of scope / accepted risks
 
@@ -39,5 +41,6 @@ Method: STRIDE-style review. Each threat lists the attack, the defence built, an
 - Denial of service at network level.
 - Traffic is plain HTTP on localhost for the demo; real use needs HTTPS (HSTS is already sent when HTTPS is used).
 - Rotating a per-user data key does not re-encrypt existing images/cards; only new writes use the new key version. Old data keeps decrypting fine under the version it was written with, but a full re-encryption pass is not built.
+- Messages are encrypted at rest under the server's master key, not end-to-end: the server can decrypt them to show both participants their conversation. Anyone with the master key and database access could do the same.
 - The audit hash chain detects tampering; it does not stop an attacker with direct database write access from truncating the table entirely and starting a new chain from scratch (there is nothing outside the database itself to compare against).
 - Face login is not built (see T11).

@@ -6,7 +6,7 @@
 
 ## 1. Abstract
 
-SecureVault is a web application that stores sensitive personal data (images and payment card details) in an encrypted vault, alongside a built-in chat that explains the project's own security techniques. Access is protected by layered authentication: a password hashed with Argon2, time-based one-time password (TOTP) multi-factor authentication, and short-lived signed session tokens. The project combines several cybersecurity internship tasks into one structured product and is tested against a written threat model.
+SecureVault is a web application that stores sensitive personal data (images and payment card details) in an encrypted vault, alongside a Chat tab that both explains the project's own security techniques and lets signed-in users exchange encrypted messages with each other. Access is protected by layered authentication: a password hashed with Argon2, time-based one-time password (TOTP) multi-factor authentication, and short-lived signed session tokens. The project combines several cybersecurity internship tasks into one structured product and is tested against a written threat model.
 
 ## 2. Objectives
 
@@ -21,7 +21,7 @@ SecureVault is a web application that stores sensitive personal data (images and
 |---|---|
 | Password security | Argon2 hashing, a length-first policy with a common-password blocklist (NIST SP 800-63B), lockout after 5 failures, password reset and change |
 | Multi-factor authentication | TOTP setup with QR code, required at login and for card reveal, with 8 single-use recovery codes as a backup |
-| Data encryption | AES-256-GCM for images and cards, with a separate per-account key (versioned, rotatable) wrapped by a master key kept outside the database |
+| Data encryption | AES-256-GCM for images, cards, and user-to-user messages, with a separate per-account key (versioned, rotatable) wrapped by a master key kept outside the database |
 | Secure file handling | Image vault: type detected from bytes, random file names, encrypted at rest |
 | Logging and monitoring | Hash-chained (tamper-evident) audit log, an admin log/user/stats view, and a per-user "my activity" view |
 | Face authentication | Designed, not completed (see Limitations) |
@@ -42,6 +42,7 @@ Plain HTML, CSS and JavaScript in the browser talk to a Flask JSON API. The API 
 - **Rate limiting:** login lockout after 5 failures, 20 sign-ups per address per hour, 120 logins per address per 5 minutes; counters live in the database so a restart cannot reset an attack in progress, and an admin can clear a lockout directly without touching the password.
 - **Password reset:** same response for real and unknown users, token stored hashed, single use, 15-minute expiry, MFA is not bypassed.
 - **Encryption chat:** a built-in, fully offline chat screen answers canned questions about the encryption techniques used in this project (AES-GCM, Argon2, TOTP, JWTs, per-user keys, the audit log). It makes no external API call and needs no key.
+- **User-to-user messages:** any signed-in account can message any other active account. Each message body is AES-256-GCM encrypted before it reaches the database, with a fresh nonce and associated data that binds the ciphertext to the conversation pair and the message's own id - so a ciphertext moved into another message, or another conversation, fails to decrypt. This is server-side encryption at rest (the same trust model as the rest of the vault), not end-to-end encryption: a server operator with the master key and database access could still read messages, the same documented limitation as everything else encrypted under that key. Sending is rate limited per account, and a user can delete their own messages.
 - **Audit log:** hash-chained - each row's hash covers its own fields plus the row before it, so an admin can recompute the chain and get back the exact row where something was edited, deleted, or inserted out of order.
 - **Admin:** role checked from the database on every request; filters are parameterised; an admin can disable or re-enable an account or clear its lockout, and verify the audit log's integrity.
 - **Frontend:** no `innerHTML` anywhere (checked by a test), strict Content Security Policy, session kept in `sessionStorage`, idle auto-logout after 5 minutes.
@@ -53,13 +54,13 @@ Plain HTML, CSS and JavaScript in the browser talk to a Flask JSON API. The API 
 |---|---|
 | Threat-model tests (`tests/test_threat_model.py`) | 87 passed |
 | Hardening tests (`tests/test_hardening.py`) | 27 passed |
-| New-feature tests (password policy, recovery codes, admin controls, audit chain, per-user keys, activity) | 54 passed |
+| New-feature tests (password policy, recovery codes, admin controls, audit chain, per-user keys, activity, user-to-user messages) | 73 passed |
 | Smoke scripts (6 scripts) | 185 checks passed |
 | Face test | 1 skipped (feature deferred) |
 | 2nd skip | 1 skipped (needs `.secrets/`, created on first server run) |
 | `pip-audit` | no known vulnerabilities at time of testing |
 
-Full suite: 168 passed, 2 skipped.
+Full suite: 187 passed, 2 skipped.
 
 Full output: `docs/test_results.txt`. Tests were also checked to fail when a flaw is deliberately injected, so they are not passing by accident.
 
@@ -68,6 +69,7 @@ Full output: `docs/test_results.txt`. Tests were also checked to fail when a fla
 - **Face authentication is not implemented.** The design (OpenCV YuNet detector with SFace recognition) and a setup check script exist, but the test laptop camera returned a black image, so enrollment and login were not built. The login code has a marked hook where it would plug in.
 - Password reset prints the token to the console instead of sending email.
 - Rotating a per-account encryption key only applies to new data; existing images and cards keep decrypting under the key version that wrote them rather than being re-encrypted.
+- Messages are encrypted at rest with the server's master key, not end-to-end: the server (and anyone with the master key and database access) can decrypt them to deliver them to both participants. A real end-to-end design would need each account to hold a private key the server never sees, with a key-exchange step on top - out of scope for this project's crypto design, which is server-side everywhere else too.
 - Per-account keys are wrapped by a single server master key, not derived from each user's own password, so a leaked master key still exposes every account (it would just no longer mean "every account under one shared encryption key").
 - The audit log's hash chain proves a row was not quietly edited, but cannot stop someone with direct database access from deleting the whole table and starting a new chain.
 - SQLite and a local key folder suit a demo, not production. A real deployment needs HTTPS, a managed key store and a proper database.
@@ -79,7 +81,7 @@ Face authentication with liveness checks, email delivery for reset, deployment b
 
 ## 9. Conclusion
 
-SecureVault delivers a working encrypted vault with layered authentication (including MFA recovery codes and a hardened password policy), per-account encryption keys, a tamper-evident audit log, admin account controls, a self-service activity view, and a built-in offline chat explaining the project's own encryption techniques - backed by a written threat model and automated tests for each major threat. The one planned feature left out, face authentication, is documented openly along with the reason.
+SecureVault delivers a working encrypted vault with layered authentication (including MFA recovery codes and a hardened password policy), per-account encryption keys, a tamper-evident audit log, admin account controls, a self-service activity view, a built-in offline chat explaining the project's own encryption techniques, and AES-256-GCM-encrypted user-to-user messaging - backed by a written threat model and automated tests for each major threat. The one planned feature left out, face authentication, is documented openly along with the reason.
 
 ## 10. Team contributions
 

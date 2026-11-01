@@ -3,8 +3,8 @@
 Every route needs a valid token AND the 'admin' role (checked against the
 database on each request). A normal user gets 403 and the attempt is logged.
 
-What admins can NOT see: password hashes, MFA secrets, images, or
-card data. The user list only shows counts of stored items.
+What admins can NOT see: password hashes, MFA secrets, images, card
+data, or message text. The user list only shows counts of stored items.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -156,5 +156,6 @@ def stats():
         mfa_enabled_users=count("SELECT COUNT(*) FROM users WHERE mfa_enabled = 1"),
         images=count("SELECT COUNT(*) FROM images"),
         cards=count("SELECT COUNT(*) FROM cards"),
+        messages=count("SELECT COUNT(*) FROM messages"),
         events_last_24h={row["event"]: row["n"] for row in events},
     )
