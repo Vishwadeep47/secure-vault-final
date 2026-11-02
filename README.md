@@ -16,6 +16,8 @@
 | Hardening | Done, see `docs/hardening.md` |
 | Face authentication | **Not built**: design and setup script only |
 
+Running on : vault.vishwadeep.in
+
 ## Run it
 
 ```powershell
