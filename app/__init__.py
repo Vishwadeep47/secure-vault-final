@@ -2,7 +2,9 @@
 import os
 
 from flask import Flask, jsonify, render_template, request
-from werkzeug.exceptions import HTTPException
+#from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 from app.config import BASE_DIR, Config
 
