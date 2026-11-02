@@ -2,9 +2,9 @@
 import os
 
 from flask import Flask, jsonify, render_template, request
-#from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 
 from app.config import BASE_DIR, Config
 
@@ -23,6 +23,9 @@ def create_app(test_config=None):
         static_url_path="/static",
         template_folder=os.path.join(BASE_DIR, "templates"),
     )
+    
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    
     app.config.from_object(Config)
     if test_config:
         app.config.update(test_config)
